@@ -1,0 +1,64 @@
+[package]
+name = "artserver"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+description = "Headless vector graphics server driven over MCP (Streamable HTTP), built on the VectorCraft engine"
+publish = false
+
+[dependencies]
+# VectorCraft のエンジン。commit を固定して参照する（docs/design-policy.md 8章）
+vectorcraft-engine = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+
+# MCP（公式 Rust SDK）。マイナー間でトランスポートが変わることがあるためマイナーまで固定する
+rmcp = { version = "~3.5", features = ["server", "macros", "transport-streamable-http-server"] }
+axum = "0.8"
+http = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+tokio-util = "0.7"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+getrandom = "0.3"
+subtle = "2"
+tempfile = "3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+rmcp = { version = "~3.5", features = ["client", "transport-streamable-http-client-reqwest"] }
+reqwest = { version = "0.13", features = ["json"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "warn"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+
+# VectorCraft のワークスペース設定は依存側に引き継がれないため写している（VectorCraft Cargo.toml:116-130）
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
+# PDF バックエンドを craft-libs の修正版に差し替える。VectorCraft の rev を上げるときは同期すること
+[patch.crates-io]
+hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
+hayro-interpret = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
+hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
+krilla = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
