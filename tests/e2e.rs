@@ -44,8 +44,12 @@ async fn call(client: &RunningService<RoleClient, ClientConfig>, tool: &'static 
     client.call_tool(CallToolRequestParams::new(tool).with_arguments(args)).await.unwrap()
 }
 
-fn ok(result: &CallToolResult) -> &Value {
+fn succeeded(result: &CallToolResult) {
     assert_ne!(result.is_error, Some(true), "tool failed: {result:?}");
+}
+
+fn ok(result: &CallToolResult) -> &Value {
+    succeeded(result);
     result.structured_content.as_ref().unwrap()
 }
 
@@ -84,8 +88,10 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     let moved = call(&client, "move_objects", json!({"session": session, "ids": [id], "dx": 10, "dy": 0})).await;
     ok(&moved);
 
+    // SVG と PNG に structuredContent が付くと、Claude Code は本文を表示しない
     let svg = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
-    ok(&svg);
+    succeeded(&svg);
+    assert!(svg.structured_content.is_none(), "{svg:?}");
     let svg_text = text_of(&svg).to_ascii_lowercase();
     assert!(svg_text.contains("<svg"), "{svg_text}");
     assert!(svg_text.contains("#3366ff") || svg_text.contains("#36f"), "{svg_text}");
@@ -94,7 +100,8 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     assert!(ok(&pdf)["dataBase64"].as_str().unwrap().starts_with("JVBER"), "not a PDF");
 
     let png = call(&client, "export_document", json!({"session": session, "format": "png", "scale": 2})).await;
-    ok(&png);
+    succeeded(&png);
+    assert!(png.structured_content.is_none(), "{png:?}");
     assert!(png.content.iter().any(|c| c.as_image().is_some()), "no image content");
 
     let undone = call(&client, "undo", json!({"session": session})).await;
@@ -115,7 +122,7 @@ async fn svg_markup_can_be_imported_and_exported_again() {
     let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="40" fill="#00aa00"/></svg>"##;
     ok(&call(&client, "import_svg", json!({"session": session, "svg": svg})).await);
     let out = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
-    ok(&out);
+    succeeded(&out);
     assert!(text_of(&out).to_ascii_lowercase().contains("#00aa00") || text_of(&out).to_ascii_lowercase().contains("#0a0"));
     let _ = client.cancel().await;
 }

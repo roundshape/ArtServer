@@ -557,30 +557,40 @@ fn paint_params(colour: &str, targets: &Value) -> Value {
 }
 
 /// エンジンの書き出し結果を、形式に合った MCP の結果にする。
+///
+/// SVG と PNG は本文だけを返し、`structuredContent` は付けない。Claude Code などのクライアントは
+/// `structuredContent` があるとそちらを表示し、`content` の本文を見せないため。警告があるときだけ
+/// 2つ目のテキストとして添える。
 fn export_result(format: ExportFormat, mut r: Value) -> CallToolResult {
     let data = match r.as_object_mut().and_then(|o| o.remove("dataBase64")) {
         Some(Value::String(data)) => data,
         _ => return tool_error("the export produced no data".to_string()),
     };
-    let summary = json!({"format": format.as_str(), "bytes": r.get("bytes").cloned(), "warnings": r.get("warnings").cloned()});
-    let mut result = match format {
+    let warnings = r.get("warnings").cloned();
+    let body = match format {
         ExportFormat::Svg => match base64::engine::general_purpose::STANDARD
             .decode(&data)
             .ok()
             .and_then(|b| String::from_utf8(b).ok())
         {
-            Some(svg) => CallToolResult::success(vec![ContentBlock::text(svg)]),
+            Some(svg) => ContentBlock::text(svg),
             None => return tool_error("the SVG export was not valid UTF-8".to_string()),
         },
-        ExportFormat::Png => CallToolResult::success(vec![ContentBlock::image(data, "image/png")]),
+        ExportFormat::Png => ContentBlock::image(data, "image/png"),
         ExportFormat::Pdf => {
-            let mut s = summary.clone();
-            s["dataBase64"] = Value::String(data);
-            return CallToolResult::structured(s);
+            return CallToolResult::structured(json!({
+                "format": format.as_str(),
+                "bytes": r.get("bytes").cloned(),
+                "warnings": warnings,
+                "dataBase64": data,
+            }));
         }
     };
-    result.structured_content = Some(summary);
-    result
+    let mut content = vec![body];
+    if let Some(w) = warnings.filter(|w| w.as_array().is_some_and(|a| !a.is_empty())) {
+        content.push(ContentBlock::text(json!({"warnings": w}).to_string()));
+    }
+    CallToolResult::success(content)
 }
 
 fn insert_opt(params: &mut Value, key: &str, value: Option<Value>) {
@@ -606,4 +616,43 @@ fn session_error(e: SessionError) -> ErrorData {
 
 fn tool_error(message: String) -> CallToolResult {
     CallToolResult::error(vec![ContentBlock::text(message)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn engine_output(data: &[u8], warnings: Value) -> Value {
+        json!({
+            "dataBase64": base64::engine::general_purpose::STANDARD.encode(data),
+            "bytes": data.len(),
+            "warnings": warnings,
+        })
+    }
+
+    #[test]
+    fn svg_is_returned_as_text_without_structured_content() {
+        let r = export_result(ExportFormat::Svg, engine_output(b"<svg/>", json!([])));
+        assert_eq!(r.is_error, Some(false));
+        assert!(r.structured_content.is_none());
+        assert_eq!(r.content.len(), 1);
+        assert_eq!(r.content[0].as_text().unwrap().text, "<svg/>");
+    }
+
+    #[test]
+    fn png_is_returned_as_an_image_without_structured_content() {
+        let r = export_result(ExportFormat::Png, engine_output(b"\x89PNG", json!([])));
+        assert!(r.structured_content.is_none());
+        assert_eq!(r.content.len(), 1);
+        assert!(r.content[0].as_image().is_some());
+    }
+
+    #[test]
+    fn warnings_follow_the_body_as_a_second_text() {
+        let r = export_result(ExportFormat::Svg, engine_output(b"<svg/>", json!(["missing font: Foo"])));
+        assert!(r.structured_content.is_none());
+        assert_eq!(r.content.len(), 2);
+        let w: Value = serde_json::from_str(&r.content[1].as_text().unwrap().text).unwrap();
+        assert_eq!(w, json!({"warnings": ["missing font: Foo"]}));
+    }
 }

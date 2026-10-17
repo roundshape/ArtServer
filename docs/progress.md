@@ -78,3 +78,45 @@
 3. `cargo deny` / `cargo about` の導入とライセンス表示の生成
 4. Linux でのビルド・テスト
 5. Phase 2: 日本語フォントの方針決定、ツールの拡充（テキスト、レイヤー、グループ、画像など）
+
+## 2026-10-18 Claude Code からの接続確認と修正
+
+### やったこと
+
+- `LICENSE`（MIT）を追加した。著作権者の表記は `Copyright (c) 2026 RoundShape`（ユーザーが決定）。
+- Claude Code から接続して動作を確かめた。
+  - トークンは `~/.config/artserver/token` に置き、`./target/debug/artserver --token-file ~/.config/artserver/token` で起動した
+  - 登録は `claude mcp add --transport http artserver ...`。既定の local スコープなので、登録したフォルダで起動した Claude Code にだけ現れる（ホームフォルダで起動して見えなかったことがある）
+  - `session_create` → `document_new` → `draw_rectangle` → `export_document`（PNG と SVG）まで成功
+
+### 見つかった不具合と修正
+
+| 項目 | 内容 |
+|---|---|
+| 症状 | SVG 書き出しで、Claude Code には `{"bytes":445,"format":"svg","warnings":[]}` だけが表示され、SVG 本文が届かない |
+| 原因 | `content` に SVG 本文、`structuredContent` に要約という別々の中身を返していた。Claude Code は `structuredContent` があるとそちらを表示する。MCP の仕様では、両者は同じ結果を表すことになっている |
+| 修正 | SVG と PNG は `structuredContent` を付けず、本文だけを返す。警告があるときだけ2つ目のテキストとして `{"warnings":[...]}` を添える（`src/tools.rs` の `export_result`）。PDF は変更なし |
+| テスト | 単体テストを3件追加。E2E で、SVG と PNG の結果に `structuredContent` がないことを確かめるようにした |
+| 見逃した理由 | E2E は rmcp のクライアントで `content` を直接読んでいたため、Claude Code での見え方の違いを検出できなかった |
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo build --all-targets` | 成功 |
+| `cargo test` | 30件すべて成功（単体20件、E2E 10件） |
+| `cargo clippy --all-targets` | 警告なし |
+| `cargo fmt --check` | 差分なし |
+| サーバーを再起動して Claude Code から SVG 書き出し | SVG 本文が表示された |
+
+### 未確認
+
+- Linux でのビルドと動作
+- 古いクライアント（`initialize` と `Mcp-Session-Id` を使うもの）での動作
+- Claude Code から PDF 書き出しを呼んだときの扱い。今は base64 を `structuredContent` に入れて返すので、大きい文書では会話が重くなるおそれがある
+
+### 次の作業
+
+1. `cargo deny` / `cargo about` の導入とライセンス表示の生成
+2. Linux でのビルド・テスト
+3. Phase 2: 日本語フォントの方針決定、ツールの拡充（テキスト、レイヤー、グループ、画像など）、PDF など大きい出力の受け渡し方（ファイル出力など）
