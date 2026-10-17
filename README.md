@@ -22,24 +22,43 @@ AIエージェントがネットワーク経由の [MCP](https://modelcontextpro
 ## ビルド
 
 ```sh
-cargo build --release
+cargo build            # 開発用。バイナリは target/debug/artserver
+cargo build --release  # 配布・常用向け。バイナリは target/release/artserver
 ```
 
-バイナリは `target/release/artserver` にできます。
+開発用のビルドでも依存ライブラリは最適化されるので、手元で試すには十分な速さで動きます。配布用のビルドはさらに最適化するため、ビルドに時間がかかります。以下の例では `target/debug/artserver` を使います。
 
 ## 起動
 
-アクセストークン（32文字以上）を決めて、環境変数かファイルで渡します。
+### 1. トークンを作る（最初の1回だけ）
+
+トークンは、ArtServer を使うための合言葉です。自分で作るランダムな文字列で、どこかから発行されるものではありません。ArtServer と Claude Code に同じ値を持たせ、一致しない要求は断ります。32文字以上の、見える ASCII 文字だけで作ってください。
+
+ファイルに保存しておくと、ArtServer を起動し直しても同じトークンを使えます。
 
 ```sh
-export ARTSERVER_TOKEN=$(openssl rand -hex 32)
-./target/release/artserver
-# → 127.0.0.1:8471 で待ち受け、MCP エンドポイントは /mcp
+mkdir -p ~/.config/artserver
+chmod 700 ~/.config/artserver
+openssl rand -hex 32 > ~/.config/artserver/token
+chmod 600 ~/.config/artserver/token
 ```
 
-ファイルで渡す場合は `--token-file <path>` を使います。トークンが設定されていなければ起動しません。
+### 2. ArtServer を起動する
+
+```sh
+./target/debug/artserver --token-file ~/.config/artserver/token
+# artserver listening; MCP endpoint is /mcp
+```
+
+127.0.0.1:8471 で待ち受けます。起動したターミナルはそのまま開いておき、止めるときは Ctrl+C を押します。トークンが設定されていなければ起動しません。
+
+トークンは環境変数 `ARTSERVER_TOKEN` でも渡せます。ただし `ARTSERVER_TOKEN=$(openssl rand -hex 32)` のように起動のたびに作ると、トークンが変わるので、Claude Code への登録もやり直すことになります。
+
+**作り直したら起動し直す**: ビルドしてバイナリを作り直しても、動いている ArtServer は古いバイナリのままです。新しいバイナリを使うには、Ctrl+C で止めて起動し直してください。作業セッションと文書はメモリにしか持っていないので、起動し直すと消えます。
 
 ### ヘルスチェック
+
+トークンなしで確認できます。
 
 ```sh
 curl http://127.0.0.1:8471/healthz
@@ -50,7 +69,8 @@ curl http://127.0.0.1:8471/healthz
 
 ```sh
 U=http://127.0.0.1:8471/mcp
-H=(-H "Authorization: Bearer $ARTSERVER_TOKEN" -H "Content-Type: application/json" \
+T=$(cat ~/.config/artserver/token)
+H=(-H "Authorization: Bearer $T" -H "Content-Type: application/json" \
    -H "Accept: application/json, text/event-stream" -H "MCP-Protocol-Version: 2025-06-18")
 
 curl -s "${H[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' $U
@@ -59,12 +79,29 @@ curl -s "${H[@]}" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"n
 
 ## Claude Code から接続する
 
+ArtServer を起動したまま、別のターミナルで登録します。
+
+### 1. 登録する
+
+**A. `claude mcp add` で登録する（手軽）**
+
+ArtServer を使いたいフォルダに移動してから登録します。
+
 ```sh
+cd <ArtServer を使いたいフォルダ>
 claude mcp add --transport http artserver http://127.0.0.1:8471/mcp \
-  --header "Authorization: Bearer $ARTSERVER_TOKEN"
+  --header "Authorization: Bearer $(cat ~/.config/artserver/token)"
+claude mcp list   # artserver が Connected と出れば接続できている
 ```
 
-この方法では、トークンが Claude Code の設定ファイルにそのまま保存されます。避けたい場合は、プロジェクトの `.mcp.json` に書き、トークンは環境変数から読ませます。
+- 既定では、**登録したフォルダで起動した Claude Code にだけ**現れます（local スコープ）。別のフォルダで起動すると表示されません。
+- どのフォルダからでも使いたい場合は `--scope user` を付けます。その場合、ArtServer が止まっている間は、Claude Code を起動するたびに接続失敗と表示されます。
+- トークンは Claude Code の設定ファイル（`~/.claude.json`）にそのまま保存されます。
+- 登録を消すには `claude mcp remove artserver` を実行します。
+
+**B. `.mcp.json` で登録する（トークンをファイルに残さない）**
+
+使いたいフォルダに `.mcp.json` を作ります。トークンの代わりに `${ARTSERVER_TOKEN}` と書くと、Claude Code が起動するときに環境変数の値で置き換えます。
 
 ```json
 {
@@ -78,7 +115,30 @@ claude mcp add --transport http artserver http://127.0.0.1:8471/mcp \
 }
 ```
 
-接続したら、例えば「ArtServer で 300×200 の文書に青い角丸の矩形を描いて SVG で見せて」と頼みます。
+Claude Code は、トークンを環境変数に入れて起動します。初回の起動時に、このプロジェクトの MCP サーバーを使うかどうか聞かれるので許可してください。
+
+```sh
+ARTSERVER_TOKEN=$(cat ~/.config/artserver/token) claude
+```
+
+### 2. Claude Code を起動し直す
+
+MCP サーバーの登録は、Claude Code の起動時に読み込まれます。登録する前から開いていた Claude Code では使えないので、一度終了して起動し直してください。`claude -c` で起動すると、直前の会話の続きから始まります。
+
+起動したら `/mcp` を入力し、`artserver` がつながっているか確かめます。
+
+### 3. 使ってみる
+
+例えば「ArtServer で 300×200 の文書に青い角丸の矩形を描いて SVG で見せて」と頼みます。
+
+### つながらないとき
+
+| 症状 | 考えられる原因 |
+|---|---|
+| `/mcp` に `artserver` が出ない | 登録したのと別のフォルダで Claude Code を起動した。または登録する前に起動した Claude Code を使っている |
+| 接続失敗と出る | ArtServer が止まっている |
+| 401（unauthorized） | 登録したトークンと ArtServer のトークンが一致しない（トークンを作り直したなど）。登録し直す |
+| B の方法でつながらない | `ARTSERVER_TOKEN` を設定せずに `claude` を起動した |
 
 ## ツール
 
@@ -91,7 +151,7 @@ claude mcp add --transport http artserver http://127.0.0.1:8471/mcp \
 | `set_paint` | オブジェクトの塗り・線の色・線幅を設定する |
 | `move_objects` | オブジェクトを移動する |
 | `inspect_document` | 文書のレイヤー構造、オブジェクトの id・種類・範囲・塗りなどを返す |
-| `export_document` | SVG / PDF / PNG で書き出す |
+| `export_document` | SVG（テキスト）、PNG（画像）、PDF（Base64 を含む JSON）で書き出す。警告があれば2つ目のテキストとして添える（SVG と PNG） |
 | `undo` / `redo` | 元に戻す／やり直す |
 
 座標の単位はポイント（1/72インチ）で、原点はアートボードの左上、y は下向きです。
