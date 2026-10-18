@@ -8,6 +8,7 @@
   - 2026-10-18 実装の進み具合に合わせて状態を更新（11章、13.1節、13.2節）
   - 2026-10-18 大きいデータの受け渡し方針をユーザーと合意し追加（4.6節、6.3節、13.2節）
   - 2026-10-18 ツールの構成（手書きのツールと、許可リスト付きの汎用ツール）を追加（4.7節、6.2節、13.2節）
+  - 2026-10-18 ツールの構成を見直し、VectorCraft のツールを ArtServer の Backend 越しに使う方式に変更（3.1節、3.2節、3.3節、4.1節、4.2節、4.7節、6.2節、8章、13.2節）
 - ステータス: **採用決定（2026-10-17 ユーザー承認）**
 - 関連文書:
   - `docs/DEVELOPMENT_PLAN.md`: 開発方針・引き継ぎ書（目的と制約の原典）
@@ -69,17 +70,19 @@ AIエージェントや外部システムが**ネットワーク経由のMCP**�
 
 | 案 | 内容 | 判断 |
 |---|---|---|
-| A-1 | VectorCraftの既存MCP（`vectorcraft-mcp`）を組み込み、HTTP部分だけ作る | 不採用 |
+| A-1 | VectorCraftの既存MCP（`vectorcraft-mcp`）を組み込み、HTTP部分だけ作る | 不採用（ツールの部分だけは使う。下の見直しを参照） |
 | **A-2** | **エンジンを組み込み、MCP部分をArtServerで作る** | **採用** |
 | B | 既存CLI（stdio版MCP）を別プロセスで起動し、HTTPから中継する | 不採用 |
 | C | VectorCraftのソースをコピーして改造する | 不採用 |
+
+**2026-10-18 見直し**: `vectorcraft-mcp` のサーバー・通信の部分は使わない。ただし、ツールの部分（`call_tool` と `Backend`）は外から使える部品として公開されており、ArtServer が実装した Backend 越しに使う（4.7節）。
 
 ### 3.2 理由
 
 - **エンジンはそのまま使える**: 描画・文書処理の層はGUIに依存せず、描画もCPUのみで動く。全機能を「コマンドID + JSON引数」で呼べるので、MCPツールへの対応付けが容易。
 - **既存MCPはネットワーク公開向けではない**: stdio専用で、手元の1人が使う前提のため、約700あるエンジンコマンドをすべて呼べる。複数セッションで使うとログが漏れ、名前やツール説明もVectorCraftのまま。必要な部分はA-1でもほぼ作り直しになる。
 - **B・Cの難点**: Bはプロセス管理・エラー伝搬・性能の管理が難しい。Cは約55万行・ほぼ毎日更新されるコードを手動で追う必要があり、現実的でない。
-- 既存MCPは依存せず、**参考実装として扱う**。特に1セッション内の待ち行列・キャンセル・混雑応答の仕組みは手本になる。
+- 既存MCPのサーバー・通信の部分には依存せず、**参考実装として扱う**。特に1セッション内の待ち行列・キャンセル・混雑応答の仕組みは手本になる。ツールの部分は、ArtServer の Backend 越しに使う（4.7節。2026-10-18 見直し）。
 
 ### 3.3 用語
 
@@ -91,6 +94,7 @@ AIエージェントや外部システムが**ネットワーク経由のMCP**�
 | Session | VectorCraftエンジンの作業単位。複数の文書・Undo履歴・選択状態を持つ |
 | 作業セッション | ArtServerが管理する作業の単位。エンジンのSession 1つに対応し、ハンドルで識別する |
 | ハンドル | ArtServerが発行する作業セッションの識別子。ツールの引数として受け渡す |
+| Backend | VectorCraft の MCP のツールが、エンジンを呼ぶときに使う差し込み口（Rust の trait。Swift の protocol に近い）。ArtServer が実装し、検査を入れる。別のサーバーやプロセスではない |
 | MVP | Minimum Viable Product。核となる流れが端から端まで動く最小の完成形 |
 
 ---
@@ -107,7 +111,7 @@ MCPクライアント（Claude Code 等）
 │ HTTP層          127.0.0.1バインド / Origin・Host検査 / 本文サイズ上限 / 接続数上限 │
 │ 認証層          Bearerトークン                                              │
 │ MCP層           rmcp（公式Rust SDK）/ プロトコル版の判定 / tools・resources  │
-│ ツール層        ArtServer独自のツール定義と入力スキーマ                        │
+│ ツール層        ArtServerのツール ＋ VectorCraftのツール（Backend越し、4.7節） │
 │ ポリシー層      許可リスト（既定で拒否）/ 入れ子コマンドの検査 / 引数検査        │
 │ セッション管理  ハンドル ↔ セッション実行器 / 上限数 / アイドル破棄             │
 │ セッション実行器 セッションごとの専用スレッドがエンジンのSessionを所有           │
@@ -124,7 +128,8 @@ MCPクライアント（Claude Code 等）
 | `http` | HTTPサーバー、`/mcp`、`/healthz`。Host/Origin検査と本文サイズ上限はrmcpの設定で有効にする |
 | `auth` | トークン検証 |
 | `mcp` | MCPプロトコル処理。rmcpに組み込み、プロトコル版の判定・ヘッダ検証は任せる。ツール呼び出しとエラーの変換を担う |
-| `tools` | ツール定義。ツール → エンジンコマンド列への変換 |
+| `tools` | ArtServer のツールの定義と、エンジンコマンド列への変換。VectorCraft のツールの公開（作業セッションのハンドルを足した入力スキーマ）と、`call_tool` への受け渡し（4.7節） |
+| `backend` | GuardedBackend。VectorCraft のツールからのエンジン呼び出しを、許可リストと引数の検査を通してから実行する。セッション実行器のスレッドで動く（4.7節） |
 | `policy` | 許可するコマンドと引数の検査 |
 | `session` | 作業セッションの表（ハンドル ↔ 実行器）、ハンドルの発行と検証、上限、アイドル破棄 |
 | `engine_host` | 専用スレッドでのSession所有、ファイル制限・キャンセルの適用、パニック・タイムアウトの扱い |
@@ -203,44 +208,69 @@ MCPの最新仕様（2026-07-28版）で、Streamable HTTPの形が大きく変�
 - MCPの「リソースリンク」でURLを返す形も検討する。Claude Codeでの扱いは実装時に確認する（13.2節）。
 - 採らなかった案: 決められたフォルダへの書き出し（スタンドアローンでは手軽だが、クラウドでは使えない。必要になったらスタンドアローン向けに追加を検討する）。圧縮だけで済ませる（会話に入る問題が解決しない）。
 
-### 4.7 ツールの構成: 手書きのツールと、許可リスト付きの汎用ツール（Phase 2で実装）
+### 4.7 ツールの構成: VectorCraft のツールを ArtServer の Backend 越しに使う（Phase 2で実装）
 
-2026-10-18 にユーザーと合意した方式。
+2026-10-18 にユーザーと合意した方式。同日、「手書きのツールと許可リスト付きの汎用ツールの組み合わせ」案から見直した。
 
 **背景**
 
 - エンジンのコマンドは、ソースから静的に数えて約760（60の分類）。それぞれに、AIが読む前提の引数の説明がある（`CommandSpec.params`。例: `shape.rectangle` は `{x, y, width, height, radius?: pt, rotation?: deg (about centre)} → {id}`）。JSON Schemaではない。
 - MVPのツール15個は、1つずつ手で書いた。この方法だけで Illustrator 相当の範囲に広げるのは現実的でない。
-- VectorCraft の MCP（`crates/mcp/src/tools.rs`）は、`command_list`（コマンドを探す）と `command_run`（どのコマンドでも実行する）で全コマンドを使わせている。ネットワーク越しに使う ArtServer では、すべてを開放できない（6.2節）。
-- エンジンは、この方式に必要なものを公開している: `command_specs()`（全コマンド）、`Session::commands()`（今の状態で使えるかどうかと、その理由つき）、`check_params`（引数の検査）、`steps::resolve`（前の手順の結果の参照）。
+- VectorCraft の MCP（`crates/mcp`）は、AI向けに作り込んだツール（`add_text`、`transform`、`draw_path` など）と、コマンドを探して実行する汎用ツール（`command_list`、`command_run`、`command_batch`）を持つ。ツールの部分は、外から使える部品として公開されている（`crates/mcp/src/lib.rs:26-31`）: `call_tool(backend, ツール名, 引数)` と、ツールがエンジンを呼ぶ窓口の trait `Backend`（関数は `call(method, params)` だけ）。
+- 調べた結果（2026-10-18、VectorCraft `fdac986`）:
+  - 編集のツールと汎用のツールは、エンジンの呼び出しをすべて `Backend` 経由にしている。使う窓口は `engine.execute`、`engine.commands`、`document.inspect`、`document.node`、`ui.render`。
+  - ファイルに直接触れるのは、画面の撮影のツール（`screenshot`、`ui_screenshot`）だけ。`call_tool` は共有のログの仕組みを使わない。
+  - `vectorcraft-mcp` の依存は、ArtServer がすでに使っているものだけで、新しい外部ライブラリは増えない。
+  - ツールの部分は改良が活発（`crates/mcp/src/tools.rs` は直近60日で43回更新）。
+  - エンジンは、許可リストの仕組みに必要なものも公開している: `command_specs()`（全コマンド）、`Session::commands()`（今の状態で使えるかどうかと、その理由つき）、`check_params`（引数の検査）、`steps::resolve`（前の手順の結果の参照）。
 
-**方式: 2種類のツールを組み合わせる**
+**方式**
 
-| 種類 | 対象 | 作り方 |
-|---|---|---|
-| 手書きのツール | よく使う基本の機能。複数のコマンドをまとめるもの。ArtServer 固有の処理が要るもの（作業セッション、書き出しと読み込み（4.6節）など） | 今と同じく1つずつ書き、AIに分かりやすい名前・引数・説明にする |
-| 汎用のツール | それ以外の機能 | `command_list` と `command_run` を置き、許可リストに載ったコマンドだけを探せて、実行できるようにする |
+ArtServer が `Backend` を実装し（以下 GuardedBackend）、VectorCraft のツールをその上で動かす。別のサーバーやプロセスは立てない。
 
-**汎用のツールの仕様**
+```text
+AI → ArtServer の MCP 層（作業セッションのハンドルを確かめる）
+       → セッション実行器のスレッド（4.3節）
+           → vectorcraft_mcp::call_tool（add_text など）
+               → GuardedBackend（ArtServer）: 許可リスト・パス・引数・文書数を検査
+                   → vectorcraft-engine
+```
 
-- `command_list {session, filter?, brief?}`: 許可リストにあるコマンドだけを返す。id、名前、引数の説明、今の状態で使えるか（使えない理由つき）。一覧全体は大きいので、既定は引数の説明を省いた短い形にし、`filter` で絞ったときに説明を返す。
-- `command_run {session, id, params?}`: 許可リストにあるコマンドを1つ実行し、エンジンの結果を返す。
-- 複数のコマンドをまとめて実行する `command_batch`（前の結果を `$N.id` で参照する）は、必要になったら足す。
-- 大きい結果（`document.json` など）は 4.6節の受け渡しに従う。
+| GuardedBackend の窓口 | 扱い |
+|---|---|
+| `engine.execute` | 今のツールと同じ検査（許可リスト、ファイルのパス、`check_params`、文書数の上限）を通してから実行する |
+| `engine.commands` | 許可リストにあるコマンドだけを返す（`command_list` の結果になる） |
+| `document.inspect`・`document.node` | 許可リスト経由で実行する |
+| `ui.render` | プレビュー用の描画（`render_preview` が使う）。エンジンの PNG 書き出しで実装する |
+| それ以外（`ui.*`、`app.*` など） | 断る |
 
-**安全の仕組み（今の仕組みをそのまま使う）**
+- VectorCraft の `Headless`（VectorCraft 側の Backend の実装）は使わない。ファイルを開く・保存する窓口を持っているため。
+- `call_tool` は、セッション実行器のスレッドで、今のファイル制限・キャンセル・制限時間の中で実行する。エンジン実行境界を越えるのは、ツール名・JSON の引数・結果という単純なデータなので、4.3節の方針（将来のプロセス分離）とも合う。
+- `call_tool` の結果（テキストや画像）は、ArtServer が MCP の結果に変換する。
 
-- 汎用のツールも、手書きのツールと同じエンジン実行境界（4.3節）を通る。許可リストの検査、ファイルのパスの拒否、引数の未知キーの検査（`check_params`）、制限時間、待ち行列の上限は共通。
-- エンジンのファイル制限（空の一時ディレクトリ、6.3節）も、最後の守りとして残る。
-- 中で別のコマンドを実行するもの（`command.batch`、`action.batch`、`plugin.run`、`script.*`）は許可しない。
+**使うツール**
 
-**コマンドの開放の分類（初期案。開放するときにコマンド単位で確認する）**
+| 区分 | ツール |
+|---|---|
+| VectorCraft のツール（作業セッションのハンドルを引数に足して公開する） | `draw_shape`、`draw_path`、`set_paint`、`transform`、`add_text`、`pathfinder`、`apply_effect`、`create_graph`、`text_wrap`、`render_preview`、`doc_inspect`、`undo`、`redo`、`command_list`、`command_run`、`command_batch` |
+| ArtServer のツール | `session_create`・`session_close`、`document_new`、`import_svg`、`export_document`（形式の制限と4.6節の受け渡しのため）、`list_fonts`（VectorCraft のツールにないため） |
+| 使わない VectorCraft のツール | 画面の操作（`ui_inspect`、`ui_screenshot`、`inspect_ui`、`select_tool`、`pointer_gesture`、`press_key`、`type_text`、`open_panel`、`invoke_menu`）、ファイルの読み書き（`open_file`、`save_file`、`screenshot`）、`export`（ArtServer の `export_document` を使う）、同じ機能の別名（`list_commands`、`run_command`、`inspect_document`） |
+| やめる ArtServer のツール（VectorCraft のツールと重なるため） | `draw_rectangle` などの図形5つ（→`draw_shape`）、`set_paint`、`move_objects`（→`transform`）、`inspect_document`（→`doc_inspect`）、`undo`・`redo` |
+
+- ツールの説明に VectorCraft 向けの文言（デスクトップアプリへの案内など）があれば、ArtServer 側で差し替える（9章のブランド方針）。
+
+**許可リスト**
+
+- VectorCraft のツールが使うコマンド（`text.create`、`text.createInPath`、`type.pathOptions`、`shape.*`、`path.create`、`paint.setFill`、`paint.setStroke`、`stroke.set`、`object.move`・`rotate`・`scale`・`reflect`・`shear`、`object.pathfinder.*`、`effect.list`、`effect.apply`、`object.setProps`、`select.set`、`graph.create`、`object.textWrap.make`・`release`、`document.inspect`、`document.node`、`edit.undo`・`redo` など）を、確認したうえで許可リストに入れる。
+- 汎用のツール（`command_list`・`command_run`・`command_batch`）で使えるのも、許可リストのコマンドだけ。中で別のコマンドを実行するもの（`command.batch`、`action.batch`、`plugin.run`、`script.*`）は許可しない。
+
+コマンドの開放の分類（初期案。開放するときにコマンド単位で確認する）:
 
 | 分類 | 対象 | 理由 |
 |---|---|---|
 | 開放しない | `prefs`、`plugin`、`script`、`help`、`shortcutSet`、`action`、`command`、`print`、`links`、`library`、`view`、`file`（`file.new` を除く）、`color.loadProfile`・`color.removeProfile`、`text.addFontFiles`・`text.findFontFiles`、`edit.colorSettings`・`edit.assignProfile`、各種プリセットやライブラリの保存・読み込み（`swatch.library.*`、`graphicStyle.saveLibrary` など） | プロセス全体の状態を変える、ファイルシステムに触れる、別のコマンドを実行する、画面の上でしか意味がない、ブランド上出さない（6.2節） |
-| 手書きのツールに集約 | 文書の作成と読み込み、書き出し（`document.export*` など。4.6節の受け渡しを使う）、文字の作成とフォントの一覧、変形、グループ、削除、レイヤーの基本操作、文書の状態、取り消しとやり直し | よく使う。AIに分かりやすくしたい。ArtServer 固有の処理が要る |
-| 汎用のツールで順に開放 | `object`、`path`、`select`、`edit`、`layer`、`paint`、`stroke`、`transparency`、`appearance`、`gradient`、`pattern`、`swatch`、`graphicStyle`、`brush`、`symbol`、`artboard`、`guide`、`type`、`text`、`shape`、`shapeBuilder`、`livePaint`、`perspective`、`effect`、`graph`、`variable`、`dataset`、`recolor`、`colorTheme`、`dimension`、`attributes` など、文書の中だけを編集するもの。上の「開放しない」に当たるものは除く | 文書の中で完結する |
+| ArtServer のツールに集約 | 文書の作成と読み込み、書き出し（`document.export*` など。4.6節の受け渡しを使う） | 形式の制限と、大きいデータの受け渡しを ArtServer で扱う |
+| 順に開放 | VectorCraft のツールが使うコマンド（上記）と、`object`、`path`、`select`、`edit`、`layer`、`paint`、`stroke`、`transparency`、`appearance`、`gradient`、`pattern`、`swatch`、`graphicStyle`、`brush`、`symbol`、`artboard`、`guide`、`type`、`text`、`shape`、`shapeBuilder`、`livePaint`、`perspective`、`effect`、`graph`、`variable`、`dataset`、`recolor`、`colorTheme`、`dimension`、`attributes` など、文書の中だけを編集するもの。上の「開放しない」に当たるものは除く | 文書の中で完結する |
 | 後で個別に判断 | `imageTrace`（処理が重く、画像を入力に取る）、`file.place`（画像などの取り込み。4.6節のアップロードが前提）、`clipboard`、`webExport`、`assets`、`svgInteractivity`、`css`、`pdf`、`flattener` | 外部のデータを扱う、出力を作る、処理が重い |
 
 - 読み取りだけのコマンド（約160。エンジンで `query` と印が付いたもの）は、早めに開放してよい候補。
@@ -254,13 +284,17 @@ MCPの最新仕様（2026-07-28版）で、Streamable HTTPの形が大きく変�
 
 **AIへの説明**
 
-- サーバーの説明（instructions）に、「まず手書きのツールを使い、無い機能は `command_list` で探して `command_run` で実行する」と書く。
+- サーバーの説明（instructions）に、「まず専用のツールを使い、無い機能は `command_list` で探して `command_run` で実行する」と書く。
 - エンジンのコマンドの多くは、対象を省くと「選択中のもの」に働く（約160が選択を前提とし、約200が `ids?` を受け付ける）。AIには `ids` を明示するよう説明に書く。
 
 **利点と注意点**
 
-- 利点: 機能の追加が許可リストへの追加で済む。ツールの数が増えないので、AIが選びやすい。VectorCraft の更新で引数の説明が良くなれば、そのまま反映される。
-- 注意: 引数の説明は VectorCraft 向けの文章で、JSON Schemaではない。間違った引数はエンジンの検査で断られ、ツールのエラーとして返る。VectorCraft の更新でコマンドの動作が変わることがあるので、commit を上げるときは許可リストのE2Eで確かめる。
+- 利点: VectorCraft が AI 向けに作り込んだツールの名前・引数・説明を、そのまま使える。ArtServer のコードが減る。VectorCraft の改良が、commit を上げたときに反映される。機能の追加は、多くが許可リストへの追加で済む。ツールの数を抑えられるので、AIが選びやすい。
+- 注意:
+  - GuardedBackend が安全の要になる。「許可していないコマンドは、どのツールから呼ばれても断られる」「`ui.*`・`app.*` は断られる」を、テストで重点的に確かめる。
+  - VectorCraft の commit を上げると、ツールの引数や動作が変わることがある。上げるたびに、ツールのE2Eで確かめる（8章）。
+  - 今のパスの検査（引数の名前だけで断る）は、`add_text` のパスに沿った文字（`text.createInPath` の `path` は図形の id）を誤って断る。値の型も見るように直す（13.2節）。
+  - ツールの説明は VectorCraft の文章で、引数の説明は JSON Schema ではない。間違った引数はエンジンの検査で断られ、ツールのエラーとして返る。
 
 ---
 
@@ -311,7 +345,7 @@ MCPの最新仕様（2026-07-28版）で、Streamable HTTPの形が大きく変�
 - プロセス全体の状態を変えるもの: `edit.colorSettings`, `edit.assignProfile`, `color.loadProfile`, `plugin.*`, `prefs.set`, `text.rescanFonts`, `text.addFontFiles`
 - ファイルシステムを広く探索・参照するもの: `links.findFiles`, `text.findFontFiles`, `file.list`, `script.check`, `file.recovery.*`
 - ブランド上公開しないもの: `help.*`（ArtCraftのサイト・Discordへのリンク）
-- 任意のコマンドを実行できる汎用ツールは公開しない。Phase 2 では、許可リストに載ったコマンドだけを探せて実行できる汎用ツールを置く（4.7節）。
+- 任意のコマンドを実行できる汎用ツールは公開しない。Phase 2 では、VectorCraft の `command_list`・`command_run`・`command_batch` を GuardedBackend 越しに置き、許可リストに載ったコマンドだけを探せて実行できるようにする（4.7節）。
 - 「プロセス全体の状態を変えるもの」を禁止するのは、1プロセスで複数セッションを動かすことによる制約。プロセス分離後は、カラー設定などセッションごとに許可できるものがある（12.5節）。
 
 ### 6.3 ファイルアクセス
@@ -387,11 +421,12 @@ MVPは「信頼できる少数のクライアントがローカルで使う」�
 - `vectorcraft-engine` を**git依存・commit固定**で参照する。ブランチ追従はしない。
   - 理由: VectorCraftはほぼ毎日バージョンが上がり、公開APIの安定性の約束がないため。
   - VectorCraftのcrateはcrates.ioに公開されていない。
+- `vectorcraft-mcp` も同じ commit で参照し、ツールの部分（`call_tool`・`Backend`）だけを使う（4.7節）。
 - VectorCraftの次の設定は依存側に引き継がれないので、ArtServerのルート `Cargo.toml` に写す:
   - `[patch.crates-io]`（PDFバックエンドの krilla / hayro-* を craft-libs の修正版に差し替える）
   - 依存crateを最適化してビルドするprofile設定
 - `Cargo.lock` はVectorCraftのものを起点にする。
-- VectorCraftを更新するときは、patch・lockfileを同期し、テストを通してから行う。PDFバックエンドが修正版になっているかをCIで検査する。
+- VectorCraftを更新するときは、patch・lockfileを同期し、テストを通してから行う。PDFバックエンドが修正版になっているかをCIで検査する。VectorCraft のツールの引数・動作の変化と、許可リストの id がすべて存在することも、テストで確かめる。
 - 手元でVectorCraftを改変して試す場合は、コミットしないローカル設定でパスに差し替える。
 
 ---
@@ -552,4 +587,4 @@ Phase 1・2では実装しない。ここでは方針と、着手するときに
 | 8 | ジョブごとにカラー設定を切り替える必要があるか（必要ならプロセス分離の前倒しを検討。12.4節） | Phase 2 |
 | 9 | プロセス分離の単位と方式（12.3節） | Phase 3着手時 |
 | 11 | 大きいデータの受け渡し（4.6節）: 返事に入れる境目の大きさ、ダウンロード・アップロードの窓口の認証方式（Bearerトークンか、有効期限付きの推測できないURLか）、Claude CodeがリソースリンクやURLをどう扱うか | Phase 2 |
-| 12 | ツールの構成（4.7節）: エンジンを動かしてコマンドの一覧と数を確かめる（今回の約760は静的に数えた値）。ファイルのパスの検査を、引数の名前だけでなく値の型でも見るか（`text.createInPath` の `path` はオブジェクトのidで、今の名前だけの検査では断られる）。Claude Code のAIが `command_list` と `command_run` を正しく使えるか | Phase 2 |
+| 12 | ツールの構成（4.7節）: エンジンを動かしてコマンドの一覧と数を確かめる（約760は静的に数えた値）。ファイルのパスの検査を、値の型でも見るようにする（`text.createInPath` の `path` は図形のid）。`call_tool` の結果（テキスト・画像）の MCP への変換。ツールの説明で差し替えが要る箇所。Claude Code のAIが、VectorCraft のツールと汎用ツールを正しく使えるか | Phase 2 |
