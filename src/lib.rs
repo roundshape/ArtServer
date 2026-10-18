@@ -5,6 +5,7 @@ pub mod auth;
 mod backend;
 pub mod config;
 pub mod engine_host;
+pub mod files;
 pub mod policy;
 pub mod session;
 pub mod tools;
@@ -25,6 +26,7 @@ use vectorcraft_engine::file_access::AutomationRoots;
 use crate::auth::Auth;
 use crate::config::Config;
 use crate::engine_host::EngineLimits;
+use crate::files::{Downloads, FileStore};
 use crate::session::Sessions;
 use crate::tools::ArtServer;
 
@@ -35,6 +37,8 @@ const PURGE_INTERVAL: Duration = Duration::from_secs(60);
 pub struct App {
     pub router: Router,
     pub sessions: Arc<Sessions>,
+    /// 大きい書き出し結果の預かり場所（docs/design-policy.md 4.6節）
+    pub files: Arc<FileStore>,
     /// エンジンのファイルアクセスを閉じ込める空のディレクトリ。サーバーが動いている間は保持する。
     _sandbox: tempfile::TempDir,
 }
@@ -54,6 +58,7 @@ impl App {
             history_bytes: limits.history_bytes,
         };
         let sessions = Arc::new(Sessions::new(limits.max_sessions, limits.session_idle, engine_limits, roots));
+        let files = Arc::new(FileStore::new(limits.file_ttl, limits.max_file_bytes));
 
         let mcp_config = StreamableHttpServerConfig::default()
             .with_legacy_session_mode(false)
@@ -64,15 +69,23 @@ impl App {
             .with_max_request_body_bytes(limits.max_body_bytes)
             .with_cancellation_token(shutdown.child_token());
         let factory_sessions = sessions.clone();
+        let factory_files = files.clone();
         let call_timeout = limits.call_timeout;
         let mcp = StreamableHttpService::new(
-            move || Ok(ArtServer::new(factory_sessions.clone(), call_timeout)),
+            move || Ok(ArtServer::new(factory_sessions.clone(), factory_files.clone(), call_timeout)),
             Arc::new(LocalSessionManager::default()),
             mcp_config,
         );
 
+        let downloads = Downloads {
+            store: files.clone(),
+            allowed_hosts: config.allowed_hosts.clone().into(),
+            allowed_origins: config.allowed_origins.clone().into(),
+        };
         let protected = Router::new()
             .nest_service("/mcp", mcp)
+            .route("/files/{id}", get(files::download))
+            .with_state(downloads)
             .layer(middleware::from_fn_with_state(Auth::new(&config.token), auth::require_bearer));
         let router = Router::new()
             .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
@@ -80,6 +93,7 @@ impl App {
         Ok(Self {
             router,
             sessions,
+            files,
             _sandbox: sandbox,
         })
     }
@@ -99,6 +113,7 @@ pub async fn serve(config: Config, listener: TcpListener, signal: impl Future<Ou
     let app = App::build(&config, shutdown.clone())?;
 
     let sessions = app.sessions.clone();
+    let files = app.files.clone();
     let purge_stop = shutdown.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(PURGE_INTERVAL);
@@ -108,6 +123,11 @@ pub async fn serve(config: Config, listener: TcpListener, signal: impl Future<Ou
                     let purged = sessions.purge_idle();
                     if purged > 0 {
                         tracing::info!(purged, "closed idle sessions");
+                    }
+                    // 使われなくなった作業セッションの書き出し結果も、期限（既定 10 分）で消える
+                    let expired = files.purge_expired();
+                    if expired > 0 {
+                        tracing::info!(expired, "dropped expired exports");
                     }
                 }
                 _ = purge_stop.cancelled() => break,

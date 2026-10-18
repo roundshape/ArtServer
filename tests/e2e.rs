@@ -131,7 +131,13 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     assert!(svg_text.contains("<svg"), "{svg_text}");
     assert!(svg_text.contains("#3366ff") || svg_text.contains("#36f"), "{svg_text}");
 
-    let pdf = call(&client, "export_document", json!({"session": session, "format": "pdf"})).await;
+    // PDF は既定では URL で返る。delivery: inline なら今までどおり Base64 で返る
+    let pdf = call(
+        &client,
+        "export_document",
+        json!({"session": session, "format": "pdf", "delivery": "inline"}),
+    )
+    .await;
     assert!(ok(&pdf)["dataBase64"].as_str().unwrap().starts_with("JVBER"), "not a PDF");
 
     let png = call(&client, "export_document", json!({"session": session, "format": "png", "scale": 2})).await;
@@ -349,6 +355,78 @@ async fn sessions_are_capped() {
 
 fn initialize_body() -> &'static str {
     r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}"#
+}
+
+async fn get(url: &str, headers: &[(&str, &str)]) -> reqwest::Response {
+    let mut req = reqwest::Client::new().get(url);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    req.send().await.unwrap()
+}
+
+#[tokio::test]
+async fn large_exports_come_back_as_download_urls() {
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(
+        &client,
+        "document_new",
+        json!({"session": session, "width": 300, "height": 200, "name": "ポスター"}),
+    )
+    .await);
+    succeeded(
+        &call(
+            &client,
+            "draw_shape",
+            json!({"session": session, "shape": "rectangle", "x": 10, "y": 10, "width": 100, "height": 50, "fill": "#3366ff"}),
+        )
+        .await,
+    );
+
+    // PDF は常に URL。応答は小さな JSON だけ
+    let pdf = call(&client, "export_document", json!({"session": session, "format": "pdf"})).await;
+    let download = ok(&pdf)["download"].clone();
+    let url = download["url"].as_str().unwrap().to_string();
+    assert!(url.starts_with(&base) && url.contains("/files/"), "{url}");
+    assert_eq!(download["name"], "ポスター.pdf");
+    assert!(ok(&pdf).get("dataBase64").is_none());
+
+    let got = get(&url, &[("Authorization", &bearer)]).await;
+    assert_eq!(got.status(), 200);
+    assert_eq!(got.headers()["content-type"], "application/pdf");
+    assert!(got.headers()["content-disposition"].to_str().unwrap().contains("filename*=UTF-8''"));
+    assert!(got.bytes().await.unwrap().starts_with(b"%PDF"), "not a PDF");
+
+    // トークンがない、ID が違う、Host や Origin が許可されていない
+    assert_eq!(get(&url, &[]).await.status(), 401);
+    assert_eq!(get(&format!("{base}/files/0000"), &[("Authorization", &bearer)]).await.status(), 404);
+    assert_eq!(get(&url, &[("Authorization", &bearer), ("Host", "evil.example")]).await.status(), 403);
+    assert_eq!(
+        get(&url, &[("Authorization", &bearer), ("Origin", "http://evil.example")]).await.status(),
+        403
+    );
+
+    // SVG も delivery: url で URL にできる
+    let svg = call(
+        &client,
+        "export_document",
+        json!({"session": session, "format": "svg", "delivery": "url"}),
+    )
+    .await;
+    let svg_url = ok(&svg)["download"]["url"].as_str().unwrap().to_string();
+    let body = get(&svg_url, &[("Authorization", &bearer)]).await.text().await.unwrap();
+    assert!(body.contains("<svg"), "{body}");
+
+    // 作業セッションを閉じると、預けたものも消える
+    ok(&call(&client, "session_close", json!({"session": session})).await);
+    assert_eq!(get(&url, &[("Authorization", &bearer)]).await.status(), 404);
+    let _ = client.cancel().await;
 }
 
 async fn post(base: &str, headers: &[(&str, &str)], body: String) -> reqwest::Response {

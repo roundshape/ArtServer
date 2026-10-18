@@ -61,6 +61,14 @@ pub struct Cli {
     #[arg(long, env = "ARTSERVER_RENDER_THREADS", default_value_t = Limits::default().render_threads)]
     pub render_threads: u16,
 
+    /// 大きい書き出し結果を預かっておく秒数（docs/design-policy.md 4.6節）
+    #[arg(long, env = "ARTSERVER_FILE_TTL_SECS", default_value_t = Limits::default().file_ttl.as_secs())]
+    pub file_ttl_secs: u64,
+
+    /// 預かる書き出し結果の合計の上限（MiB）。メモリに持つ
+    #[arg(long, env = "ARTSERVER_MAX_FILE_MIB", default_value_t = Limits::default().max_file_bytes / MIB)]
+    pub max_file_mib: usize,
+
     /// OS に入っているフォントに加えて使うフォントのフォルダ（カンマ区切り）。組織で用意した
     /// フォントを置く用途（docs/design-policy.md 1.1節）
     #[arg(long, env = "ARTSERVER_FONT_DIRS", value_delimiter = ',')]
@@ -93,6 +101,10 @@ pub struct Limits {
     pub max_documents: usize,
     pub history_bytes: usize,
     pub render_threads: u16,
+    /// 大きい書き出し結果を預かっておく時間
+    pub file_ttl: Duration,
+    /// 預かる書き出し結果の合計の上限（バイト）
+    pub max_file_bytes: usize,
 }
 
 impl Default for Limits {
@@ -106,6 +118,8 @@ impl Default for Limits {
             max_documents: 8,
             history_bytes: 64 * MIB,
             render_threads: 2,
+            file_ttl: Duration::from_secs(10 * 60),
+            max_file_bytes: 256 * MIB,
         }
     }
 }
@@ -138,6 +152,8 @@ impl Cli {
             max_documents: self.max_documents.max(1),
             history_bytes: self.history_mib.saturating_mul(MIB),
             render_threads: self.render_threads,
+            file_ttl: Duration::from_secs(self.file_ttl_secs.max(1)),
+            max_file_bytes: self.max_file_mib.max(1).saturating_mul(MIB),
             ..Limits::default()
         };
         let font_dirs = font_dirs(self.font_dirs)?;

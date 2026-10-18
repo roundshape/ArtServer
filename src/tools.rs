@@ -13,6 +13,7 @@ use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
+use axum::body::Bytes;
 use base64::Engine as _;
 use http::request::Parts;
 use rmcp::handler::server::router::tool::{ToolRoute, ToolRouter};
@@ -28,6 +29,7 @@ use vectorcraft_mcp::ToolResult;
 
 use crate::auth::Principal;
 use crate::engine_host::{HostError, Step};
+use crate::files::{FileStore, StoredFile, file_name};
 use crate::session::{SessionError, Sessions};
 
 const INSTRUCTIONS: &str = "ArtServer edits vector documents. Call session_create first and pass the returned `session` \
@@ -36,7 +38,9 @@ to every other tool. Create a document with document_new (or import_svg), draw a
 result with doc_inspect or render_preview, then export_document. For anything else, find a command with command_list \
 and run it with command_run (or several with command_batch); only the commands command_list shows are available. \
 Pass object ids explicitly as `ids` rather than relying on the selection. Coordinates are in points (1/72 inch), \
-origin at the artboard's top-left, y down. list_fonts tells which font families this server has.";
+origin at the artboard's top-left, y down. list_fonts tells which font families this server has. Large exports \
+come back as a download URL: fetch it with an HTTP GET carrying the same `Authorization: Bearer` token as this MCP \
+server (for example `curl -H \"Authorization: Bearer $TOKEN\" -o out.pdf <url>`).";
 
 /// 公開する VectorCraft のツール（docs/design-policy.md 4.7節）。
 const VECTORCRAFT_TOOLS: &[&str] = &[
@@ -64,6 +68,12 @@ const SESSION_DESCRIPTION: &str = "Session handle returned by session_create.";
 /// PNG 書き出しの倍率の上限。
 const MAX_PNG_SCALE: f64 = 16.0;
 
+/// 返し方が auto のとき、返事に入れる大きさの上限（docs/design-policy.md 4.6節）。AI の会話に
+/// そのまま入るので、テキストは Claude Code に届く量（約2万5千トークン）より十分小さくする。
+/// PDF は AI が読めないので、常に URL にする。
+const INLINE_SVG_BYTES: usize = 32 * 1024;
+const INLINE_PNG_BYTES: usize = 256 * 1024;
+
 /// VectorCraft のツールの呼び出し口が返す future。
 type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<CallToolResponse, ErrorData>> + Send + 'a>>;
 
@@ -71,6 +81,7 @@ type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<CallToolResponse, Error
 #[derive(Clone)]
 pub struct ArtServer {
     sessions: Arc<Sessions>,
+    files: Arc<FileStore>,
     call_timeout: Duration,
     tool_router: ToolRouter<Self>,
 }
@@ -133,6 +144,14 @@ impl ExportFormat {
             ExportFormat::Png => "png",
         }
     }
+
+    fn mime(self) -> &'static str {
+        match self {
+            ExportFormat::Svg => "image/svg+xml",
+            ExportFormat::Pdf => "application/pdf",
+            ExportFormat::Png => "image/png",
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -145,16 +164,42 @@ pub struct ExportArgs {
     pub scale: Option<f64>,
     /// SVG only: convert text to outlines so the file needs no fonts to display.
     pub outline_text: Option<bool>,
+    /// How to return the file: auto (default: SVG up to 32 KB and PNG up to 256 KB inline, PDF and anything larger
+    /// as a download URL), inline, or url.
+    pub delivery: Option<Delivery>,
+}
+
+/// 書き出し結果の返し方。
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Delivery {
+    #[default]
+    Auto,
+    Inline,
+    Url,
+}
+
+impl Delivery {
+    /// 大きさ `bytes` の `format` の結果を、返事に入れるか。
+    fn inline(self, format: ExportFormat, bytes: usize) -> bool {
+        match (self, format) {
+            (Delivery::Inline, _) => true,
+            (Delivery::Url, _) | (Delivery::Auto, ExportFormat::Pdf) => false,
+            (Delivery::Auto, ExportFormat::Svg) => bytes <= INLINE_SVG_BYTES,
+            (Delivery::Auto, ExportFormat::Png) => bytes <= INLINE_PNG_BYTES,
+        }
+    }
 }
 
 impl ArtServer {
-    pub fn new(sessions: Arc<Sessions>, call_timeout: Duration) -> Self {
+    pub fn new(sessions: Arc<Sessions>, files: Arc<FileStore>, call_timeout: Duration) -> Self {
         let mut tool_router = Self::tool_router();
         for tool in vectorcraft_tools() {
             tool_router.add_route(ToolRoute::new_dyn(tool.clone(), call_vectorcraft_tool));
         }
         Self {
             sessions,
+            files,
             call_timeout,
             tool_router,
         }
@@ -221,6 +266,43 @@ impl ArtServer {
             }
         }
     }
+
+    /// 書き出し結果を預かり場所に入れ、取りに来るための URL を返す（docs/design-policy.md 4.6節）。
+    fn deposit(&self, parts: &Parts, session: &str, format: ExportFormat, title: Option<&str>, exported: Value) -> Result<CallToolResult, ErrorData> {
+        let owner = principal(parts)?;
+        let data = match exported
+            .get("dataBase64")
+            .and_then(Value::as_str)
+            .and_then(|d| base64::engine::general_purpose::STANDARD.decode(d).ok())
+        {
+            Some(data) => data,
+            None => return Ok(tool_error("the export produced no data".to_string())),
+        };
+        let name = file_name(title, format.as_str());
+        let size = data.len();
+        let file = StoredFile {
+            name: name.clone(),
+            mime: format.mime(),
+            data: Bytes::from(data),
+        };
+        let deposit = match self.files.put(&owner, session, file) {
+            Ok(deposit) => deposit,
+            Err(e) => return Ok(tool_error(e.to_string())),
+        };
+        let path = format!("/files/{}", deposit.id);
+        Ok(CallToolResult::structured(json!({
+            "format": format.as_str(),
+            "bytes": size,
+            "warnings": exported.get("warnings").cloned().unwrap_or(json!([])),
+            "download": {
+                "url": format!("{}{path}", base_url(parts)),
+                "path": path,
+                "name": name,
+                "expiresInSeconds": deposit.expires_in.as_secs(),
+                "auth": "Send the same `Authorization: Bearer` token as for this MCP server.",
+            },
+        })))
+    }
 }
 
 #[tool_router]
@@ -239,6 +321,7 @@ impl ArtServer {
     async fn session_close(&self, Parameters(a): Parameters<SessionArgs>, Extension(parts): Extension<Parts>) -> Result<CallToolResult, ErrorData> {
         let owner = principal(&parts)?;
         self.sessions.close(&a.session, &owner).map_err(session_error)?;
+        self.files.remove_session(&a.session);
         Ok(CallToolResult::structured(json!({"closed": true})))
     }
 
@@ -300,7 +383,11 @@ folders), or the styles of one family. Use these names for add_text and text sty
         Ok(CallToolResult::structured(out))
     }
 
-    #[tool(description = "Export the active document as SVG (returned as text), PNG (returned as an image) or PDF (returned as base64).")]
+    #[tool(
+        description = "Export the active document as SVG, PNG or PDF. Small SVG (up to 32 KB) comes back as text and small PNG \
+(up to 256 KB) as an image; PDF and larger files come back as a download URL valid for a few minutes. Fetch the URL with an HTTP \
+GET carrying the same `Authorization: Bearer` token as this MCP server. `delivery` overrides the choice (inline returns PDF as base64)."
+    )]
     async fn export_document(
         &self,
         Parameters(a): Parameters<ExportArgs>,
@@ -326,11 +413,23 @@ folders), or the styles of one family. Use these names for add_text and text sty
             }
             insert_opt(&mut params, "outlineText", Some(Value::from(outline)));
         }
-        let mut results = match self.exec(&parts, &a.session, vec![Step::new("document.export", params)], &ct).await? {
+        // 文書の名前（title）は、URL で渡すときのファイル名に使う
+        let steps = vec![Step::new("document.inspect", json!({"depth": 0})), Step::new("document.export", params)];
+        let mut results = match self.exec(&parts, &a.session, steps, &ct).await? {
             Ok(results) => results,
             Err(e) => return Ok(e),
         };
-        Ok(export_result(a.format, results.pop().unwrap_or(Value::Null)))
+        let exported = results.pop().unwrap_or(Value::Null);
+        let title = results.pop().and_then(|doc| doc.get("title").and_then(Value::as_str).map(str::to_string));
+        let bytes = exported
+            .get("bytes")
+            .and_then(Value::as_u64)
+            .and_then(|b| usize::try_from(b).ok())
+            .unwrap_or(usize::MAX);
+        if a.delivery.unwrap_or_default().inline(a.format, bytes) {
+            return Ok(export_result(a.format, exported));
+        }
+        self.deposit(&parts, &a.session, a.format, title.as_deref(), exported)
     }
 }
 
@@ -440,6 +539,19 @@ fn export_result(format: ExportFormat, mut r: Value) -> CallToolResult {
         content.push(ContentBlock::text(json!({"warnings": w}).to_string()));
     }
     CallToolResult::success(content)
+}
+
+/// この要求が届いた ArtServer の URL（`http://127.0.0.1:8471` など）。Host は rmcp が許可リストで
+/// 検査済み。リバースプロキシの後ろでは X-Forwarded-Proto の https を使う。プロキシがパスの
+/// 前置き（/artserver/ など）を付ける構成には対応していない。
+fn base_url(parts: &Parts) -> String {
+    let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
+    let host = header("host").unwrap_or("127.0.0.1");
+    let scheme = match header("x-forwarded-proto") {
+        Some(p) if p.eq_ignore_ascii_case("https") => "https",
+        _ => "http",
+    };
+    format!("{scheme}://{host}")
 }
 
 fn insert_opt(params: &mut Value, key: &str, value: Option<Value>) {

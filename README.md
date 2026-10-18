@@ -155,7 +155,7 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `document_new` | 新しい文書（アートボード1つ）を作る |
 | `import_svg` | SVG のマークアップを新しい文書として開く（リンクされたファイルは読まない） |
 | `list_fonts` | 使えるフォントのファミリーの一覧（`query` で絞り込み）。`family` を指定すると、そのスタイルの一覧 |
-| `export_document` | SVG（テキスト）、PNG（画像）、PDF（Base64 を含む JSON）で書き出す。警告があれば2つ目のテキストとして添える（SVG と PNG） |
+| `export_document` | SVG・PNG・PDF で書き出す。小さい SVG（32KB まで）はテキスト、小さい PNG（256KB まで）は画像で返す。PDF とそれより大きいものは、取りに来るための URL を返す（[大きい書き出し結果の受け取り](#大きい書き出し結果の受け取り)）。`delivery` で返し方を指定できる（`inline` なら PDF も Base64 で返す） |
 
 **VectorCraft のツール**
 
@@ -193,14 +193,35 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | 1セッションで開ける文書数 |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | 文書1つあたりの Undo 履歴の上限 |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | 書き出し1回あたりの描画スレッド数 |
+| `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | 大きい書き出し結果を預かっておく秒数 |
+| `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | 預かる書き出し結果の合計の上限（メモリに持つ） |
 | `--font-dirs` | `ARTSERVER_FONT_DIRS` | なし | OS に入っているフォントに加えて使うフォントのフォルダ（カンマ区切り）。組織で用意したフォントを置く用途。フォントのライセンスは運用する側で確認する |
 
 ログは標準エラー出力に出ます。詳しさは `RUST_LOG`（例: `RUST_LOG=debug`）で変えられます。
 
+## 大きい書き出し結果の受け取り
+
+PDF や大きい SVG・PNG は、`export_document` が中身の代わりに URL を返します。ArtServer は書き出し結果をメモリに預かり（ディスクには書かない）、期限（既定 10 分）が過ぎるか作業セッションを閉じると捨てます。
+
+```json
+{"format": "pdf", "bytes": 5242880, "warnings": [],
+ "download": {"url": "http://127.0.0.1:8471/files/7f3a…", "path": "/files/7f3a…", "name": "ポスター.pdf", "expiresInSeconds": 600, "auth": "…"}}
+```
+
+URL は、MCP と同じトークンを付けて GET で取ります。預けた主体（トークン）以外には「見つからない」と返します。
+
+```sh
+curl -H "Authorization: Bearer $(cat ~/.config/artserver/token)" -o poster.pdf "http://127.0.0.1:8471/files/7f3a…"
+```
+
+Claude Code に取りに行かせる場合、AI はトークンを知らないので、トークンのファイルの場所（例: `~/.config/artserver/token`）を伝えておく必要があります（プロジェクトの `CLAUDE.md` に書いておくなど）。
+
+リバースプロキシの後ろで使う場合、URL のホスト名は届いた `Host`、スキームは `X-Forwarded-Proto` の https から作ります。プロキシがパスの前置き（`/artserver/` など）を付ける構成には、まだ対応していません。
+
 ## セキュリティ
 
 - 既定では 127.0.0.1 でだけ待ち受けます。
-- すべての MCP 要求に Bearer トークンが必要です。
+- すべての MCP 要求と、書き出し結果の受け取り（`/files/`）に Bearer トークンが必要です。
 - Host / Origin ヘッダを検査します（DNSリバインディング対策）。
 - エンジンのコマンドは許可リスト方式で、プロセス全体の設定を変えるコマンドやファイルを扱うコマンドは実行できません。
 - ファイルパスは受け付けません。入力も出力もツールの引数と結果で受け渡します。エンジンのファイルアクセスは、空の一時ディレクトリの中に閉じ込めています。

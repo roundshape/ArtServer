@@ -248,9 +248,45 @@ Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux �
 
 - Claude Code から新しいツールを使った確認（ツールの一覧の読み込み直しが必要）
 
+## 2026-10-18 大きい書き出し結果の URL での受け渡し
+
+### 方針
+
+設計方針 4.6節のうち、書き出しの部分を実装した。預かる場所は**メモリ**、取りに来る窓口の認証は **MCP と同じ Bearer トークン**（ユーザーが決定）。
+
+### やったこと
+
+- `src/files.rs` を追加した。書き出し結果の預かり場所（`FileStore`）と、`GET /files/{id}` の窓口。
+  - 預けた主体だけが取れる（ほかの主体には 404）。ID は32バイトの乱数
+  - 期限は既定 10 分、合計は既定 256MiB（超えたら断る）、1つの作業セッションにつき 8 個（超えたら古いものから捨てる）
+  - 期限が過ぎたものは60秒ごとの掃除で、閉じた作業セッションのものは `session_close` で捨てる
+  - Host と Origin を `/mcp` と同じ許可リストで検査する
+  - ファイル名は文書の名前から作り、`Content-Disposition` に UTF-8 の名前も書く
+- `export_document` に `delivery`（auto・inline・url）を足した。auto では SVG は 32KB まで、PNG は 256KB まで返事に入れ、PDF とそれより大きいものは URL を返す。
+- 起動時の設定 `--file-ttl-secs`・`--max-file-mib` を追加した。
+- サーバーの説明とツールの説明に、URL はトークンを付けて取ることを書いた。README に「大きい書き出し結果の受け取り」の節を足した。
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo build --all-targets --offline` | 成功（依存は増えておらず、`Cargo.lock` も変わっていない） |
+| `cargo test --offline --locked` | 52件すべて成功（単体38件、E2E 14件） |
+| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+
+主な新しいテスト: 預けた主体にだけ返ること、期限切れ、作業セッションごとの個数の上限、合計の上限、作業セッションを閉じたときの削除、ファイル名、Host・Origin の判定（単体）。PDF が URL で返り、トークン付きの GET で PDF が取れること、トークンなしは 401、違う ID は 404、許可されていない Host・Origin は 403、SVG も `delivery: url` で URL にできること、作業セッションを閉じると 404 になること（E2E）。
+
+### 気づいたこと
+
+- AI（Claude Code）は ArtServer のトークンを知らないので、URL を取りに行かせるには、トークンのファイルの場所を伝えておく必要がある（README に記載）。使い勝手が悪ければ、短い期限の、URL だけで取れる方式との比較を改めて検討する。
+
+### 未確認
+
+- Claude Code から、大きい書き出し結果を URL で取りに行く流れ（ArtServer の再起動と、Claude Code のツールの一覧の読み込み直しが必要）
+
 ### 次の作業
 
-1. Claude Code での確認（新しいツール、日本語の文字、`command_run`）
-2. 大きいデータの受け渡し（設計方針 4.6節。置き場所はメモリかディスクかを決める）
-3. Windows のビルドの確認（手動で実行する GitHub Actions）
-4. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
+1. Claude Code での確認（新しいツール、日本語の文字、`command_run`、URL での受け取り）
+2. Windows のビルドの確認（手動で実行する GitHub Actions）
+3. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
+4. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）
