@@ -205,23 +205,23 @@ PDF や大きい SVG・PNG は、`export_document` が中身の代わりに URL 
 
 ```json
 {"format": "pdf", "bytes": 5242880, "warnings": [],
- "download": {"url": "http://127.0.0.1:8471/files/7f3a…", "path": "/files/7f3a…", "name": "ポスター.pdf", "expiresInSeconds": 600, "auth": "…"}}
+ "download": {"url": "http://127.0.0.1:8471/files/7f3a…", "path": "/files/7f3a…", "name": "ポスター.pdf", "expiresInSeconds": 600, "note": "…"}}
 ```
 
-URL は、MCP と同じトークンを付けて GET で取ります。預けた主体（トークン）以外には「見つからない」と返します。
+URL は**トークンなしで取れます**。ブラウザで開くとダウンロードされ、curl でも取れます。期限までは何度でも取れます。
 
 ```sh
-curl -H "Authorization: Bearer $(cat ~/.config/artserver/token)" -o poster.pdf "http://127.0.0.1:8471/files/7f3a…"
+curl -o poster.pdf "http://127.0.0.1:8471/files/7f3a…"
 ```
 
-Claude Code に取りに行かせる場合、AI はトークンを知らないので、トークンのファイルの場所（例: `~/.config/artserver/token`）を伝えておく必要があります（プロジェクトの `CLAUDE.md` に書いておくなど）。
+URL の ID（256ビットの乱数）が合鍵の代わりなので、**URL を知っている人は、期限までは誰でも取れます**。URL を共有の場所に貼らないでください。取ったファイルは、ブラウザの中では開かず、必ずダウンロードになります（`Content-Disposition: attachment`、`Content-Security-Policy: sandbox`、`X-Content-Type-Options: nosniff`）。Host と Origin は、`/mcp` と同じ許可リストで検査します。
 
 リバースプロキシの後ろで使う場合、URL のホスト名は届いた `Host`、スキームは `X-Forwarded-Proto` の https から作ります。プロキシがパスの前置き（`/artserver/` など）を付ける構成には、まだ対応していません。
 
 ## セキュリティ
 
 - 既定では 127.0.0.1 でだけ待ち受けます。
-- すべての MCP 要求と、書き出し結果の受け取り（`/files/`）に Bearer トークンが必要です。
+- すべての MCP 要求に Bearer トークンが必要です。書き出し結果の受け取り（`/files/`）は、推測できない ID を含む期限付きの URL で行い、トークンは求めません。
 - Host / Origin ヘッダを検査します（DNSリバインディング対策）。
 - エンジンのコマンドは許可リスト方式で、プロセス全体の設定を変えるコマンドやファイルを扱うコマンドは実行できません。
 - ファイルパスは受け付けません。入力も出力もツールの引数と結果で受け渡します。エンジンのファイルアクセスは、空の一時ディレクトリの中に閉じ込めています。

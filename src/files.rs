@@ -1,26 +1,24 @@
 //! 大きい書き出し結果の一時的な預かり場所と、それを取りに来る `GET /files/{id}` の窓口
 //! （docs/design-policy.md 4.6節）。
 //!
-//! 中身はメモリにだけ持ち、ディスクには書かない。預けた主体（トークン）にだけ返し、期限が
-//! 過ぎたものと、閉じた作業セッションのものは捨てる。
+//! 中身はメモリにだけ持ち、ディスクには書かない。URL の ID（256ビットの乱数）を合鍵にして、
+//! トークンなしで取れる（ブラウザや、curl を使えないクライアントでもリンクから取れるように）。
+//! 期限が過ぎたものと、閉じた作業セッションのものは捨てる。
 
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use axum::Extension;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-use crate::auth::Principal;
-
 /// 1つの作業セッションが同時に預けられるファイルの数。超えたら古いものから捨てる。
 const MAX_FILES_PER_SESSION: usize = 8;
 
-/// ID の乱数のバイト数。
+/// ID の乱数のバイト数。URL がそのまま合鍵になるので、推測できない長さにする。
 const ID_BYTES: usize = 32;
 
 /// ファイル名の文字数の上限（拡張子を除く）。
@@ -65,7 +63,6 @@ pub struct StoredFile {
 }
 
 struct Entry {
-    owner: Principal,
     session: String,
     file: StoredFile,
     expires: Instant,
@@ -92,7 +89,7 @@ impl FileStore {
     }
 
     /// 作業セッション `session` の書き出し結果を預かり、取りに来るための ID を返す。
-    pub fn put(&self, owner: &Principal, session: &str, file: StoredFile) -> Result<Deposit, FileError> {
+    pub fn put(&self, session: &str, file: StoredFile) -> Result<Deposit, FileError> {
         let mut entries = self.entries();
         let now = Instant::now();
         entries.retain(|_, e| e.expires > now);
@@ -113,7 +110,6 @@ impl FileStore {
         entries.insert(
             id.clone(),
             Entry {
-                owner: owner.clone(),
                 session: session.to_string(),
                 file,
                 expires: now + self.ttl,
@@ -122,13 +118,10 @@ impl FileStore {
         Ok(Deposit { id, expires_in: self.ttl })
     }
 
-    /// `owner` が預けた、期限内のファイル。ほかの主体には存在しないのと同じに見せる。
-    pub fn get(&self, id: &str, owner: &Principal) -> Option<StoredFile> {
+    /// 期限内のファイル。期限までは何度でも取れる（表示したリンクを先読みするクライアントでも消えないように）。
+    pub fn get(&self, id: &str) -> Option<StoredFile> {
         let entries = self.entries();
-        entries
-            .get(id)
-            .filter(|e| &e.owner == owner && e.expires > Instant::now())
-            .map(|e| e.file.clone())
+        entries.get(id).filter(|e| e.expires > Instant::now()).map(|e| e.file.clone())
     }
 
     /// 閉じた作業セッションのファイルを捨て、その数を返す。
@@ -176,16 +169,17 @@ pub struct Downloads {
     pub allowed_origins: Arc<[String]>,
 }
 
-/// 預かったファイルを返す。認証は手前のミドルウェアで済んでいる。Host と Origin は `/mcp` と
-/// 同じ許可リストで検査する（rmcp の検査は `/mcp` にしか掛からないため）。
-pub async fn download(State(d): State<Downloads>, Path(id): Path<String>, Extension(owner): Extension<Principal>, headers: HeaderMap) -> Response {
+/// 預かったファイルを返す。トークンは求めず、URL の ID だけで取れる。Host と Origin は `/mcp` と
+/// 同じ許可リストで検査する（rmcp の検査は `/mcp` にしか掛からないため）。中身はブラウザの中で
+/// 開かず、必ずダウンロードさせる（SVG のスクリプトなどを、この窓口のオリジンで動かさないため）。
+pub async fn download(State(d): State<Downloads>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     if !host_allowed(&headers, &d.allowed_hosts) {
         return (StatusCode::FORBIDDEN, "forbidden: Host header is not allowed").into_response();
     }
     if !origin_allowed(&headers, &d.allowed_origins) {
         return (StatusCode::FORBIDDEN, "forbidden: Origin header is not allowed").into_response();
     }
-    let Some(file) = d.store.get(&id, &owner) else {
+    let Some(file) = d.store.get(&id) else {
         return (StatusCode::NOT_FOUND, "not found or expired").into_response();
     };
     let disposition = HeaderValue::from_str(&content_disposition(&file.name)).unwrap_or(HeaderValue::from_static("attachment"));
@@ -194,6 +188,9 @@ pub async fn download(State(d): State<Downloads>, Path(id): Path<String>, Extens
             (header::CONTENT_TYPE, HeaderValue::from_static(file.mime)),
             (header::CONTENT_DISPOSITION, disposition),
             (header::CACHE_CONTROL, HeaderValue::from_static("no-store")),
+            (header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")),
+            (header::CONTENT_SECURITY_POLICY, HeaderValue::from_static("sandbox")),
+            (header::REFERRER_POLICY, HeaderValue::from_static("no-referrer")),
         ],
         file.data,
     )
@@ -262,56 +259,51 @@ mod tests {
     }
 
     #[test]
-    fn files_go_back_only_to_their_owner() {
+    fn files_are_found_by_their_id_until_they_expire() {
         let store = FileStore::new(Duration::from_secs(60), 1 << 20);
-        let alice = Principal::new("alice");
-        let deposit = store.put(&alice, "s1", file(10)).unwrap();
-        assert_eq!(store.get(&deposit.id, &alice).unwrap().data.len(), 10);
-        assert!(store.get(&deposit.id, &Principal::new("bob")).is_none());
-        assert!(store.get("unknown", &alice).is_none());
+        let deposit = store.put("s1", file(10)).unwrap();
+        assert_eq!(deposit.id.len(), ID_BYTES * 2);
+        // 期限までは何度でも取れる
+        assert_eq!(store.get(&deposit.id).unwrap().data.len(), 10);
+        assert!(store.get(&deposit.id).is_some());
+        assert!(store.get("unknown").is_none());
     }
 
     #[test]
     fn expired_files_are_gone() {
         let store = FileStore::new(Duration::ZERO, 1 << 20);
-        let owner = Principal::new("p");
-        let deposit = store.put(&owner, "s1", file(10)).unwrap();
-        assert!(store.get(&deposit.id, &owner).is_none());
+        let deposit = store.put("s1", file(10)).unwrap();
+        assert!(store.get(&deposit.id).is_none());
         assert_eq!(store.purge_expired(), 1);
     }
 
     #[test]
     fn a_session_keeps_only_its_latest_files() {
         let store = FileStore::new(Duration::from_secs(60), 1 << 20);
-        let owner = Principal::new("p");
-        let ids: Vec<String> = (0..MAX_FILES_PER_SESSION + 2)
-            .map(|_| store.put(&owner, "s1", file(1)).unwrap().id)
-            .collect();
-        assert!(store.get(&ids[0], &owner).is_none(), "the oldest is dropped");
-        assert!(store.get(&ids[1], &owner).is_none());
-        assert!(ids[2..].iter().all(|id| store.get(id, &owner).is_some()));
+        let ids: Vec<String> = (0..MAX_FILES_PER_SESSION + 2).map(|_| store.put("s1", file(1)).unwrap().id).collect();
+        assert!(store.get(&ids[0]).is_none(), "the oldest is dropped");
+        assert!(store.get(&ids[1]).is_none());
+        assert!(ids[2..].iter().all(|id| store.get(id).is_some()));
         // ほかの作業セッションの分は数えない
-        assert!(store.put(&owner, "s2", file(1)).is_ok());
+        assert!(store.put("s2", file(1)).is_ok());
     }
 
     #[test]
     fn the_total_size_is_capped() {
         let store = FileStore::new(Duration::from_secs(60), 100);
-        let owner = Principal::new("p");
-        store.put(&owner, "s1", file(60)).unwrap();
-        assert!(matches!(store.put(&owner, "s2", file(60)), Err(FileError::Full { .. })));
-        assert!(store.put(&owner, "s2", file(40)).is_ok());
+        store.put("s1", file(60)).unwrap();
+        assert!(matches!(store.put("s2", file(60)), Err(FileError::Full { .. })));
+        assert!(store.put("s2", file(40)).is_ok());
     }
 
     #[test]
     fn closing_a_session_drops_its_files() {
         let store = FileStore::new(Duration::from_secs(60), 1 << 20);
-        let owner = Principal::new("p");
-        let mine = store.put(&owner, "s1", file(1)).unwrap();
-        let other = store.put(&owner, "s2", file(1)).unwrap();
+        let mine = store.put("s1", file(1)).unwrap();
+        let other = store.put("s2", file(1)).unwrap();
         assert_eq!(store.remove_session("s1"), 1);
-        assert!(store.get(&mine.id, &owner).is_none());
-        assert!(store.get(&other.id, &owner).is_some());
+        assert!(store.get(&mine.id).is_none());
+        assert!(store.get(&other.id).is_some());
     }
 
     #[test]

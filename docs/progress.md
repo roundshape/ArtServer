@@ -280,13 +280,49 @@ Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux �
 
 - AI（Claude Code）は ArtServer のトークンを知らないので、URL を取りに行かせるには、トークンのファイルの場所を伝えておく必要がある（README に記載）。使い勝手が悪ければ、短い期限の、URL だけで取れる方式との比較を改めて検討する。
 
-### 未確認
+### Claude Code での確認（2026-10-18）
 
-- Claude Code から、大きい書き出し結果を URL で取りに行く流れ（ArtServer の再起動と、Claude Code のツールの一覧の読み込み直しが必要）
+ArtServer を起動し直し、Claude Code を `claude -c` で起動し直して（`/mcp` の Reconnect だけではツールの一覧が入れ替わらなかった）、AI が新しいツールを直接使えることを確かめた。
+
+| 確かめたこと | 結果 |
+|---|---|
+| `list_fonts`（絞り込み、スタイルの一覧） | ヒラギノ丸ゴの2ファミリー、ヒラギノ角ゴの W0〜W9 が返った |
+| `add_text`（日本語、フォントの指定） | 角ゴと丸ゴで文字を置けた |
+| `command_run`（`text.setStyle`、`text.setText`、`text.fonts`） | W6 への変更、文字の差し替え、使用フォントの確認ができた |
+| `command_run` で許可していないコマンド（`prefs.set`） | 「not allowed」で断られた |
+| `render_preview` | プレビュー画像が表示された |
+| `export_document`（PDF） | 中身の代わりに URL が返った。トークンを付けた curl で PDF（約13KB）を取れ、トークンなしは 401 |
+
+- `claude -c` で再開した会話では、前からあるツール（`export_document` など）の説明が古いまま AI に見えていた（`delivery` の引数が見えない）。既定の返し方で動くので確認には支障なかったが、新しい会話で始めれば最新の説明が見えるはず。
+- AI が URL を取りに行けたのは、トークンのファイルの場所を知っていたため。ほかの環境では、README のとおり場所を伝える必要がある。
+
+## 2026-10-18 書き出し結果の受け取りをトークン不要の URL に変更
+
+### 経緯
+
+Claude Code での確認の後、ユーザーが返ってきた URL をブラウザで開いたところ、`unauthorized` になった（トークンを求める設計どおりの動き）。ブラウザや、curl を実行できないクライアント（Claude Desktop など）では取れず、AI にもトークンの場所を教える必要があるため、ユーザーの判断で「URL だけで取れる（期限付き）」方式に変えた。
+
+### やったこと
+
+- `src/files.rs`: 預けた主体の確認をやめ、URL の ID（256ビットの乱数）だけで取れるようにした。期限（既定 10 分）までは何度でも取れる（1回取ったら消す方式は、リンクの先読みで消えるおそれがあるので採らなかった）。ブラウザの中で開かせず必ずダウンロードにするヘッダーを足した（`Content-Security-Policy: sandbox`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`）。
+- `src/lib.rs`: `/files/{id}` をトークンの検査の外に移した。Host と Origin の検査は残した。
+- `src/tools.rs`: サーバーの説明、`export_document` の説明、応答の文言（`auth` → `note`）を、トークン不要に合わせて直した。
+- README・設計方針（4.6節、13.2節）を更新した。
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo build --all-targets --offline` | 成功 |
+| `cargo test --offline --locked` | 52件すべて成功（単体38件、E2E 14件）。E2E で、トークンなしで PDF が取れること（2回取れること）、安全のためのヘッダー、違う ID は 404、許可されていない Host・Origin は 403、作業セッションを閉じると 404 を確かめた |
+| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+
+### ブラウザでの確認
+
+ArtServer を起動し直し、Claude Code から PDF を書き出して返ってきた URL を、ユーザーがブラウザで開いた。トークンなしで `browser-download-test.pdf` としてダウンロードできた。
 
 ### 次の作業
 
-1. Claude Code での確認（新しいツール、日本語の文字、`command_run`、URL での受け取り）
-2. Windows のビルドの確認（手動で実行する GitHub Actions）
-3. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
-4. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）
+1. Windows のビルドの確認（手動で実行する GitHub Actions）
+2. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
+3. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）

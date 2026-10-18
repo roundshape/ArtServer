@@ -84,11 +84,12 @@ impl App {
         };
         let protected = Router::new()
             .nest_service("/mcp", mcp)
-            .route("/files/{id}", get(files::download))
-            .with_state(downloads)
             .layer(middleware::from_fn_with_state(Auth::new(&config.token), auth::require_bearer));
+        // 書き出し結果は URL の ID が合鍵なので、トークンを求めない（docs/design-policy.md 4.6節）
         let router = Router::new()
             .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
+            .route("/files/{id}", get(files::download))
+            .with_state(downloads)
             .merge(protected);
         Ok(Self {
             router,

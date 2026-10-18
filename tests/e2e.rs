@@ -369,7 +369,6 @@ async fn get(url: &str, headers: &[(&str, &str)]) -> reqwest::Response {
 async fn large_exports_come_back_as_download_urls() {
     let base = start(Limits::default()).await;
     let client = client(&base, TOKEN).await;
-    let bearer = format!("Bearer {TOKEN}");
     let session = ok(&call(&client, "session_create", json!({})).await)["session"]
         .as_str()
         .unwrap()
@@ -397,20 +396,24 @@ async fn large_exports_come_back_as_download_urls() {
     assert_eq!(download["name"], "ポスター.pdf");
     assert!(ok(&pdf).get("dataBase64").is_none());
 
-    let got = get(&url, &[("Authorization", &bearer)]).await;
+    // URL の ID が合鍵なので、ブラウザと同じくトークンなしで取れる。期限までは何度でも取れる
+    let got = get(&url, &[]).await;
     assert_eq!(got.status(), 200);
     assert_eq!(got.headers()["content-type"], "application/pdf");
-    assert!(got.headers()["content-disposition"].to_str().unwrap().contains("filename*=UTF-8''"));
-    assert!(got.bytes().await.unwrap().starts_with(b"%PDF"), "not a PDF");
-
-    // トークンがない、ID が違う、Host や Origin が許可されていない
-    assert_eq!(get(&url, &[]).await.status(), 401);
-    assert_eq!(get(&format!("{base}/files/0000"), &[("Authorization", &bearer)]).await.status(), 404);
-    assert_eq!(get(&url, &[("Authorization", &bearer), ("Host", "evil.example")]).await.status(), 403);
-    assert_eq!(
-        get(&url, &[("Authorization", &bearer), ("Origin", "http://evil.example")]).await.status(),
-        403
+    let disposition = got.headers()["content-disposition"].to_str().unwrap().to_string();
+    assert!(
+        disposition.starts_with("attachment;") && disposition.contains("filename*=UTF-8''"),
+        "{disposition}"
     );
+    assert_eq!(got.headers()["x-content-type-options"], "nosniff");
+    assert_eq!(got.headers()["content-security-policy"], "sandbox");
+    assert!(got.bytes().await.unwrap().starts_with(b"%PDF"), "not a PDF");
+    assert_eq!(get(&url, &[]).await.status(), 200);
+
+    // ID が違う、Host や Origin が許可されていない
+    assert_eq!(get(&format!("{base}/files/0000"), &[]).await.status(), 404);
+    assert_eq!(get(&url, &[("Host", "evil.example")]).await.status(), 403);
+    assert_eq!(get(&url, &[("Origin", "http://evil.example")]).await.status(), 403);
 
     // SVG も delivery: url で URL にできる
     let svg = call(
@@ -420,12 +423,12 @@ async fn large_exports_come_back_as_download_urls() {
     )
     .await;
     let svg_url = ok(&svg)["download"]["url"].as_str().unwrap().to_string();
-    let body = get(&svg_url, &[("Authorization", &bearer)]).await.text().await.unwrap();
+    let body = get(&svg_url, &[]).await.text().await.unwrap();
     assert!(body.contains("<svg"), "{body}");
 
     // 作業セッションを閉じると、預けたものも消える
     ok(&call(&client, "session_close", json!({"session": session})).await);
-    assert_eq!(get(&url, &[("Authorization", &bearer)]).await.status(), 404);
+    assert_eq!(get(&url, &[]).await.status(), 404);
     let _ = client.cancel().await;
 }
 

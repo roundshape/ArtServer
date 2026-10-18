@@ -39,8 +39,8 @@ result with doc_inspect or render_preview, then export_document. For anything el
 and run it with command_run (or several with command_batch); only the commands command_list shows are available. \
 Pass object ids explicitly as `ids` rather than relying on the selection. Coordinates are in points (1/72 inch), \
 origin at the artboard's top-left, y down. list_fonts tells which font families this server has. Large exports \
-come back as a download URL: fetch it with an HTTP GET carrying the same `Authorization: Bearer` token as this MCP \
-server (for example `curl -H \"Authorization: Bearer $TOKEN\" -o out.pdf <url>`).";
+come back as a download URL valid for a few minutes: open it in a browser or fetch it with an HTTP GET (for example \
+`curl -o out.pdf <url>`); no token is needed, and anyone with the URL can download the file until it expires.";
 
 /// 公開する VectorCraft のツール（docs/design-policy.md 4.7節）。
 const VECTORCRAFT_TOOLS: &[&str] = &[
@@ -269,7 +269,6 @@ impl ArtServer {
 
     /// 書き出し結果を預かり場所に入れ、取りに来るための URL を返す（docs/design-policy.md 4.6節）。
     fn deposit(&self, parts: &Parts, session: &str, format: ExportFormat, title: Option<&str>, exported: Value) -> Result<CallToolResult, ErrorData> {
-        let owner = principal(parts)?;
         let data = match exported
             .get("dataBase64")
             .and_then(Value::as_str)
@@ -285,7 +284,7 @@ impl ArtServer {
             mime: format.mime(),
             data: Bytes::from(data),
         };
-        let deposit = match self.files.put(&owner, session, file) {
+        let deposit = match self.files.put(session, file) {
             Ok(deposit) => deposit,
             Err(e) => return Ok(tool_error(e.to_string())),
         };
@@ -299,7 +298,7 @@ impl ArtServer {
                 "path": path,
                 "name": name,
                 "expiresInSeconds": deposit.expires_in.as_secs(),
-                "auth": "Send the same `Authorization: Bearer` token as for this MCP server.",
+                "note": "No token is needed: anyone with the URL can download the file until it expires.",
             },
         })))
     }
@@ -385,8 +384,8 @@ folders), or the styles of one family. Use these names for add_text and text sty
 
     #[tool(
         description = "Export the active document as SVG, PNG or PDF. Small SVG (up to 32 KB) comes back as text and small PNG \
-(up to 256 KB) as an image; PDF and larger files come back as a download URL valid for a few minutes. Fetch the URL with an HTTP \
-GET carrying the same `Authorization: Bearer` token as this MCP server. `delivery` overrides the choice (inline returns PDF as base64)."
+(up to 256 KB) as an image; PDF and larger files come back as a download URL valid for a few minutes, which a browser or an HTTP \
+GET can fetch without a token. `delivery` overrides the choice (inline returns PDF as base64)."
     )]
     async fn export_document(
         &self,
