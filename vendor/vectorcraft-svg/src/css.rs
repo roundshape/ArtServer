@@ -70,10 +70,12 @@ pub(crate) fn transparency(n: &Node) -> Props {
 }
 
 /// The weight and italic of the face style `st` asks for: what embedded fonts' `@font-face`
-/// rules and the characters using them say, so each face is told apart (Semibold from Bold).
+/// rules and the characters using them say, so each face is told apart (Semibold from Bold). A
+/// Variable Font `wght` setting is the weight.
 pub(crate) fn font_descriptor(st: &CharStyle) -> (u16, bool) {
     let fs = st.font_style.to_ascii_lowercase();
-    (style_css_weight(&st.font_style).round().clamp(1.0, 1000.0) as u16, fs.contains("italic") || fs.contains("oblique"))
+    let weight = st.font_axes.get("wght").copied().filter(|w| w.is_finite()).unwrap_or_else(|| f64::from(style_css_weight(&st.font_style)));
+    (weight.round().clamp(1.0, 1000.0) as u16, fs.contains("italic") || fs.contains("oblique"))
 }
 
 /// The CSS weight of face style `style`. Japanese faces (Hiragino, Morisawa…) name their weights
@@ -91,9 +93,17 @@ fn style_css_weight(style: &str) -> f32 {
     }
 }
 
+/// The width character style `st` asks for, in percent of the normal width: its Variable Font
+/// `wdth` setting (an axis in those units), which `font-stretch` writes; `None` without one.
+pub(crate) fn font_stretch(st: &CharStyle) -> Option<f64> {
+    st.font_axes.get("wdth").copied().filter(|w| w.is_finite() && *w > 0.0)
+}
+
 /// The font of character style `st`: family, size (the vertical scale; writers stretch the
-/// horizontal one), weight and style, lengths written by `len`. The weight is the style's number
-/// (600 for Semibold, 300 for Light), `bold` for 700 and left out for 400.
+/// horizontal one), weight and style, and its Variable Font settings, lengths written by `len`.
+/// The weight is the style's number (600 for Semibold, 300 for Light) or the `wght` setting,
+/// `bold` for 700 and left out for 400. The settings are `font-variation-settings` (`"wght" 650`),
+/// and the `wdth` setting is `font-stretch` too ([`font_stretch`]).
 pub(crate) fn font_props(st: &CharStyle, len: &dyn Fn(f64) -> String) -> Props {
     let mut p = Props::new();
     // A quoted family escapes `\` and `'`, which would otherwise end the string early.
@@ -112,6 +122,14 @@ pub(crate) fn font_props(st: &CharStyle, len: &dyn Fn(f64) -> String) -> Props {
     }
     if italic {
         p.push(("font-style", "italic".into()));
+    }
+    if let Some(w) = font_stretch(st) {
+        p.push(("font-stretch", format!("{}%", fmt_num(w, 3))));
+    }
+    let axes: Vec<String> =
+        st.font_axes.iter().filter(|(_, v)| v.is_finite()).map(|(tag, v)| format!("{} {}", css_string(tag), fmt_num(*v, 3))).collect();
+    if !axes.is_empty() {
+        p.push(("font-variation-settings", axes.join(", ")));
     }
     p
 }
@@ -611,7 +629,7 @@ impl Rules<'_> {
                 }
                 RasterFx::GaussianBlur { radius } => filter = Some(format!("blur({})", self.len(radius / 2.0))),
                 RasterFx::InnerGlow { .. } | RasterFx::Feather { .. } => art.unsupported("inner glows or feathering"),
-                RasterFx::Pixel(_) => art.unsupported("pixel effects"),
+                RasterFx::Pixel(_) | RasterFx::Rasterize(_) => art.unsupported("pixel effects"),
             }
         }
         if !shadows.is_empty() {

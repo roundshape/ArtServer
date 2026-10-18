@@ -346,7 +346,40 @@ ArtServer を起動し直し、Claude Code から PDF を書き出して返っ�
 - 初回の実行（run 39120244900）は成功。警告・エラーなし。全体で約34分、うちビルド 32分20秒。`vendor/vectorcraft-svg` も Windows で差し替わってビルドされた。
 - これで macOS・Linux・Windows の3つでビルドが通ることを確かめた。Windows での動作（実機での実行）は未確認。
 
+## 2026-10-18 VectorCraft を v0.13.1 に更新
+
+### 方針
+
+上げ先は、ユーザーの選択で正式なリリースの v0.13.1（commit `904f0fe5227bd987d55319e89a38b4b8f046998c`、2026-10-18 公開、前の固定 `fdac986` から142 commit 先）にした。最新の main（`797e899`）ではなく、リリースの区切りを使う。
+
+### 変わった点と対応
+
+| 項目 | 内容 |
+|---|---|
+| commit | `Cargo.toml` の VectorCraft の4か所と、`vendor/vectorcraft-svg/Cargo.toml` の依存を `904f0fe` に上げた |
+| PDF 用の差し替え・ビルドの設定 | VectorCraft v0.13.1 でも同じ（craft-libs `ca50d63`）。変更なし |
+| 新しい依存 | `craft-docpath`（craft-libs、rev `82a24b0`。文書に保存されたパスを開いてよいかを判定する）。`vectorcraft-svg` が使うので `vendor/` の `Cargo.toml` に足した。`about.toml` にライセンスの指定を足した |
+| `vendor/vectorcraft-svg` | v0.13.1 のコードをコピーし直した。本家の `font_descriptor` が可変フォントの `wght` 軸を先に見る形に変わっていたので、差分は当てずに内容を読んで修正を載せ直し、差分のファイルを作り直した。#2873 は v0.13.1 でも直っていない |
+| yoke-derive | 0.8.3（取り下げ済み）から 0.8.4 に上げた。`cargo deny` の yanked の警告が消えた |
+| ArtServer のコード | 変更不要だった（公開 API の変化は小さく、VectorCraft の MCP のツールの名前も同じ） |
+| ライセンス表示 | `about.hbs` の VectorCraft と craft-libs の記載を更新し、生成し直した |
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo fetch` | 成功 |
+| `cargo build --all-targets --locked` | 成功（警告・エラーなし、約1分14秒） |
+| `cargo test --locked` | 54件すべて成功（単体39件、E2E 15件）。許可リストの全コマンドが v0.13.1 のエンジンに存在すること、VectorCraft のツール16個の公開、SVG の太さの修正も含む |
+| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+| `cargo deny check` | すべて ok（警告なし） |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功 |
+
+### 未確認
+
+- Claude Code からの動作の確認（ArtServer の再起動が必要）
+- GitHub Actions の Linux のビルド（push で動く。`Cargo.lock` が変わったので時間がかかる）
+
 ### 次の作業
 
-1. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
-2. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）
+1. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）

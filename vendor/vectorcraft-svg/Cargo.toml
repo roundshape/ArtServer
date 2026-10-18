@@ -1,4 +1,4 @@
-# ArtServer が修正して使う、VectorCraft の vectorcraft-svg のコピー（commit fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c）。
+# ArtServer が修正して使う、VectorCraft の vectorcraft-svg のコピー（commit 904f0fe5227bd987d55319e89a38b4b8f046998c、v0.13.1）。
 # 修正の内容と、VectorCraft を更新するときの載せ直しの手順は vendor/README.md を参照。
 #
 # 元の Cargo.toml は VectorCraft のワークスペースの設定（workspace = true）を引き継いでいるため、
@@ -6,7 +6,7 @@
 # テスト（tests/ と dev-dependencies）は ArtServer のビルドで使わないので含めていない。
 [package]
 name = "vectorcraft-svg"
-version = "0.12.0"
+version = "0.13.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "VectorCraft SVG import and export"
@@ -16,12 +16,14 @@ publish = false
 unsafe_code = "deny"
 
 [dependencies]
-vectorcraft-geom = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
-vectorcraft-color = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
-vectorcraft-doc = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
-vectorcraft-effects = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
-vectorcraft-brush = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
-vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c", default-features = false }
+vectorcraft-geom = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-color = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-doc = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-effects = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-brush = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c", default-features = false }
+# Which paths stored in documents may be opened.
+craft-docpath = { version = "0.1.0", git = "https://github.com/storytold/craft-libs", rev = "82a24b006eefa036b43c09a67fb9a3fbd17ffe63" }
 kurbo = { version = "0.13", features = ["serde"] }
 usvg = { version = "0.48", default-features = false, features = ["svgz"] }
 thiserror = "2"

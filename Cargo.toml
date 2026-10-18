@@ -9,11 +9,11 @@ publish = false
 
 [dependencies]
 # VectorCraft のエンジン。commit を固定して参照する（docs/design-policy.md 8章）
-vectorcraft-engine = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
-vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
-vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-engine = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
 # VectorCraft の MCP のツールの部分だけを使う（call_tool と Backend。docs/design-policy.md 4.7節）
-vectorcraft-mcp = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-mcp = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
 
 # MCP（公式 Rust SDK）。マイナー間でトランスポートが変わることがあるためマイナーまで固定する
 rmcp = { version = "~3.5", features = ["server", "macros", "transport-streamable-http-server"] }

@@ -85,6 +85,8 @@ clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", licens
 # craft-libs も同じ
 [craft-pdf]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "2f42c0cafc8ad394d91373fe1f342aee5453850b151a51405c68cae9ada86d26" }] }
+[craft-docpath]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "2f42c0cafc8ad394d91373fe1f342aee5453850b151a51405c68cae9ada86d26" }] }
 
 # BSD-3-Clause/MIT のうち、同梱している BSD-3-Clause の文面を使う
 [brotli-decompressor]

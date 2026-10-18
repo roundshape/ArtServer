@@ -17,7 +17,7 @@ with `deny.toml`).
 
 ## VectorCraft
 
-- Source: https://github.com/storytold/vectorcraft (commit `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c`)
+- Source: https://github.com/storytold/vectorcraft (v0.13.1, commit `904f0fe5227bd987d55319e89a38b4b8f046998c`; `vectorcraft-svg` is a patched copy in `vendor/`)
 - Crates used: `vectorcraft-engine`, `vectorcraft-render`, `vectorcraft-text` and the internal crates they depend on
 - License: MIT OR Apache-2.0
 - Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors
@@ -28,8 +28,8 @@ are not used by ArtServer (VectorCraft `docs/brand/LICENSE-brand.txt`).
 
 ## craft-libs (PDF backend)
 
-- Source: https://github.com/storytold/craft-libs (rev `ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d`)
-- Components: `craft-pdf`, and the patched `krilla`, `hayro-syntax`, `hayro-interpret`, `hayro-jbig2`
+- Source: https://github.com/storytold/craft-libs (rev `ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d`; `craft-docpath` from rev `82a24b006eefa036b43c09a67fb9a3fbd17ffe63`)
+- Components: `craft-pdf`, `craft-docpath`, and the patched `krilla`, `hayro-syntax`, `hayro-interpret`, `hayro-jbig2`
 - License: MIT OR Apache-2.0
 - Copyright (c) 2026 ArtCraft Team and the craft-libs contributors; Copyright (c) The Hayro Authors
 
@@ -261,7 +261,7 @@ crates that use it.
 
 | License | Crates |
 |---|---|
-| MIT License | 259 |
+| MIT License | 260 |
 | Unicode License v3 | 19 |
 | Apache License 2.0 | 7 |
 | BSD 3-Clause "New" or "Revised" License | 7 |
@@ -4039,28 +4039,28 @@ SOFTWARE.
 
 Used by:
 
-- vectorcraft-affinity 0.12.0
-- vectorcraft-brush 0.12.0
-- vectorcraft-cad 0.12.0
-- vectorcraft-color 0.12.0
-- vectorcraft-doc 0.12.0
-- vectorcraft-effects 0.12.0
-- vectorcraft-engine 0.12.0
-- vectorcraft-eps 0.12.0
-- vectorcraft-format 0.12.0
-- vectorcraft-geom 0.12.0
-- vectorcraft-mcp 0.12.0
-- vectorcraft-metafile 0.12.0
-- vectorcraft-pathops 0.12.0
-- vectorcraft-pdf 0.12.0
-- vectorcraft-plugins 0.12.0
-- vectorcraft-render 0.12.0
-- vectorcraft-scriptcheck 0.12.0
-- vectorcraft-text 0.12.0
-- vectorcraft-three-d 0.12.0
-- vectorcraft-tools 0.12.0
-- vectorcraft-trace 0.12.0
-- vectorcraft-svg 0.12.0
+- vectorcraft-affinity 0.13.1
+- vectorcraft-brush 0.13.1
+- vectorcraft-cad 0.13.1
+- vectorcraft-color 0.13.1
+- vectorcraft-doc 0.13.1
+- vectorcraft-effects 0.13.1
+- vectorcraft-engine 0.13.1
+- vectorcraft-eps 0.13.1
+- vectorcraft-format 0.13.1
+- vectorcraft-geom 0.13.1
+- vectorcraft-mcp 0.13.1
+- vectorcraft-metafile 0.13.1
+- vectorcraft-pathops 0.13.1
+- vectorcraft-pdf 0.13.1
+- vectorcraft-plugins 0.13.1
+- vectorcraft-render 0.13.1
+- vectorcraft-scriptcheck 0.13.1
+- vectorcraft-text 0.13.1
+- vectorcraft-three-d 0.13.1
+- vectorcraft-tools 0.13.1
+- vectorcraft-trace 0.13.1
+- vectorcraft-svg 0.13.1
 
 ```text
 MIT License
@@ -4091,6 +4091,7 @@ SOFTWARE.
 
 Used by:
 
+- [craft-docpath 0.1.0](https://github.com/storytold/craft-libs)
 - [craft-pdf 0.1.0](https://github.com/storytold/craft-libs)
 
 ```text
@@ -5360,7 +5361,7 @@ Used by:
 - [potential_utf 0.1.6](https://github.com/unicode-org/icu4x)
 - [tinystr 0.8.4](https://github.com/unicode-org/icu4x)
 - [writeable 0.6.4](https://github.com/unicode-org/icu4x)
-- [yoke-derive 0.8.3](https://github.com/unicode-org/icu4x)
+- [yoke-derive 0.8.4](https://github.com/unicode-org/icu4x)
 - [yoke 0.8.3](https://github.com/unicode-org/icu4x)
 - [zerofrom-derive 0.1.8](https://github.com/unicode-org/icu4x)
 - [zerofrom 0.1.8](https://github.com/unicode-org/icu4x)
