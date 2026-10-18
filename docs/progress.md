@@ -375,10 +375,16 @@ ArtServer を起動し直し、Claude Code から PDF を書き出して返っ�
 | `cargo deny check` | すべて ok（警告なし） |
 | `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功 |
 
+### GitHub Actions でのビルド
+
+| 環境 | 結果 |
+|---|---|
+| Linux（push で自動、run 39123583009） | 成功。警告・エラーなし。全体 約12分半、うちビルド 10分45秒 |
+| Windows（手動、run 39123684572） | 成功。警告・エラーなし。全体 約33分、うちビルド 28分33秒（VectorCraft の crate をすべてビルドし直したため、キャッシュがあっても長い） |
+
 ### 未確認
 
 - Claude Code からの動作の確認（ArtServer の再起動が必要）
-- GitHub Actions の Linux のビルド（push で動く。`Cargo.lock` が変わったので時間がかかる）
 
 ### 次の作業
 
