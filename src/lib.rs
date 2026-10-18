@@ -70,9 +70,17 @@ impl App {
             .with_cancellation_token(shutdown.child_token());
         let factory_sessions = sessions.clone();
         let factory_files = files.clone();
+        let public_url: Option<Arc<str>> = config.public_url.as_deref().map(Arc::from);
         let call_timeout = limits.call_timeout;
         let mcp = StreamableHttpService::new(
-            move || Ok(ArtServer::new(factory_sessions.clone(), factory_files.clone(), call_timeout)),
+            move || {
+                Ok(ArtServer::new(
+                    factory_sessions.clone(),
+                    factory_files.clone(),
+                    public_url.clone(),
+                    call_timeout,
+                ))
+            },
             Arc::new(LocalSessionManager::default()),
             mcp_config,
         );

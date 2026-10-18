@@ -13,6 +13,7 @@
   - 2026-10-18 VectorCraft の不具合を crate 単位で差し替えて直す方針を追加（8章）
   - 2026-10-18 4.6節の書き出しの URL 化を実装（4.6節、13.2節）
   - 2026-10-18 書き出し結果の受け取りを、トークン不要の期限付き URL に変更（4.6節、13.2節）
+  - 2026-10-18 外から見える URL を指定する `--public-url` を追加（4.6節）
 - ステータス: **採用決定（2026-10-17 ユーザー承認）**
 - 関連文書:
   - `docs/DEVELOPMENT_PLAN.md`: 開発方針・引き継ぎ書（目的と制約の原典）
@@ -222,7 +223,7 @@ MCPの最新仕様（2026-07-28版）で、Streamable HTTPの形が大きく変�
 | 返し方の既定（auto） | SVG は 32KB まで、PNG は 256KB まで返事に入れる。PDF は常に URL。`export_document` の `delivery`（auto・inline・url）で指定もできる |
 | 期限と上限 | 期限は既定 10 分（`--file-ttl-secs`）。合計は既定 256MiB（`--max-file-mib`）で、超えたら断る。1つの作業セッションにつき 8 個までで、超えたら古いものから捨てる |
 | 消すとき | 期限が過ぎたとき（60 秒ごとの掃除でも消す）、作業セッションを閉じたとき。取りに来た後も期限までは残す（取り直せるように。また、表示したリンクの中身を先読みするクライアントで、利用者が開く前に消えないように） |
-| URL | 届いた `Host` と、`X-Forwarded-Proto` の https から組み立てる。プロキシのパスの前置きには未対応 |
+| URL | `--public-url`（例: `https://example.co.jp/artserver`）があれば、その後ろに `/files/{id}` を付ける。リバースプロキシのパスの前置きにも対応できる。指定したホスト名は `--allowed-hosts` に自動で加える。指定がなければ、届いた `Host` と `X-Forwarded-Proto` の https から組み立てる（リバースプロキシの設定次第になる） |
 | ファイル名 | 文書の名前（`document.inspect` の `title`）から作る。`Content-Disposition` に ASCII の代わりの名前と UTF-8 の名前を書く |
 | 応答 | `{format, bytes, warnings, download: {url, path, name, expiresInSeconds, note}}`。content と structuredContent に同じものを入れる |
 

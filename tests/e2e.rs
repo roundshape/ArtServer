@@ -18,6 +18,10 @@ use tokio::net::TcpListener;
 const TOKEN: &str = "test-token-0123456789abcdef0123456789abcdef";
 
 async fn start(limits: Limits) -> String {
+    start_with(limits, None).await
+}
+
+async fn start_with(limits: Limits, public_url: Option<&str>) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let config = Config {
@@ -26,6 +30,7 @@ async fn start(limits: Limits) -> String {
         allowed_hosts: vec!["127.0.0.1".into(), "localhost".into()],
         allowed_origins: vec![],
         font_dirs: vec![],
+        public_url: public_url.map(str::to_string),
         limits,
     };
     tokio::spawn(artserver::serve(config, listener, std::future::pending()));
@@ -429,6 +434,25 @@ async fn large_exports_come_back_as_download_urls() {
     // 作業セッションを閉じると、預けたものも消える
     ok(&call(&client, "session_close", json!({"session": session})).await);
     assert_eq!(get(&url, &[]).await.status(), 404);
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn download_urls_follow_the_public_url() {
+    // リバースプロキシが https://example.co.jp/artserver/ を ArtServer の / に渡す構成
+    let base = start_with(Limits::default(), Some("https://example.co.jp/artserver")).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": session})).await);
+    let pdf = call(&client, "export_document", json!({"session": session, "format": "pdf"})).await;
+    let download = ok(&pdf)["download"].clone();
+    let path = download["path"].as_str().unwrap().to_string();
+    assert_eq!(download["url"].as_str().unwrap(), format!("https://example.co.jp/artserver{path}"));
+    // ArtServer 自身は /files/… で返す（前置きはプロキシが外す）
+    assert_eq!(get(&format!("{base}{path}"), &[]).await.status(), 200);
     let _ = client.cancel().await;
 }
 

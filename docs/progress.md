@@ -321,6 +321,25 @@ Claude Code での確認の後、ユーザーが返ってきた URL をブラウ
 
 ArtServer を起動し直し、Claude Code から PDF を書き出して返ってきた URL を、ユーザーがブラウザで開いた。トークンなしで `browser-download-test.pdf` としてダウンロードできた。
 
+## 2026-10-18 `--public-url` の追加
+
+### 経緯
+
+リバースプロキシの後ろでは、書き出し結果の URL がプロキシの設定（`Host` と `X-Forwarded-Proto` を渡すか）次第になり、パスの前置き（`/artserver/` など）を付ける構成には対応できなかった。ユーザーの指示で、外から見える URL を起動時に指定する `--public-url`（`ARTSERVER_PUBLIC_URL`）を足した。
+
+### やったこと
+
+- `src/config.rs`: `--public-url` を追加した。http か https の完全な URL だけを認め、利用者情報・クエリは認めない（誤りがあれば起動しない）。末尾の `/` は取る。ホスト名は `--allowed-hosts` に自動で加える。
+- `src/tools.rs`・`src/lib.rs`: `--public-url` があれば、書き出し結果の URL をその後ろに `/files/{id}` を付けて作る。なければ今までどおり `Host` と `X-Forwarded-Proto` から作る。
+- README（設定の表、リバースプロキシの説明）と設計方針（4.6節）を更新した。
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo test --offline --locked` | 54件すべて成功（単体39件、E2E 15件）。新しいテスト: `--public-url` の検査とホスト名の自動追加（単体）、`--public-url` を指定すると URL が `https://example.co.jp/artserver/files/…` になり、ArtServer 自身は `/files/…` で返すこと（E2E） |
+| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+
 ### 次の作業
 
 1. Windows のビルドの確認（手動で実行する GitHub Actions）

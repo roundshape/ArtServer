@@ -73,6 +73,12 @@ pub struct Cli {
     /// フォントを置く用途（docs/design-policy.md 1.1節）
     #[arg(long, env = "ARTSERVER_FONT_DIRS", value_delimiter = ',')]
     pub font_dirs: Vec<PathBuf>,
+
+    /// 外から見える ArtServer の URL（例: https://example.co.jp/artserver）。書き出し結果の URL を
+    /// これの後ろに /files/… を付けて作る。リバースプロキシの後ろで使うときに指定する。未指定なら
+    /// 届いた Host と X-Forwarded-Proto から作る。ホスト名は --allowed-hosts に自動で加える
+    #[arg(long, env = "ARTSERVER_PUBLIC_URL")]
+    pub public_url: Option<String>,
 }
 
 const MIB: usize = 1024 * 1024;
@@ -86,6 +92,8 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
     /// 追加で読み込むフォントのフォルダ（絶対パス）
     pub font_dirs: Vec<PathBuf>,
+    /// 外から見える ArtServer の URL（末尾の / なし）。書き出し結果の URL に使う
+    pub public_url: Option<String>,
     pub limits: Limits,
 }
 
@@ -140,9 +148,16 @@ impl Cli {
         let token = token.trim().to_string();
         validate_token(&token)?;
         // rmcp は Host の許可リストが空だとすべての Host を通すので、空は認めない
-        let allowed_hosts = non_empty(self.allowed_hosts);
+        let mut allowed_hosts = non_empty(self.allowed_hosts);
         if allowed_hosts.is_empty() {
             return Err("--allowed-hosts must name at least one host".to_string());
+        }
+        let public_url = public_url(self.public_url)?;
+        // 外から見える名前として宣言したホストは、リバースプロキシがそのまま Host に渡しても通す
+        if let Some((_, host)) = &public_url
+            && !allowed_hosts.iter().any(|h| h.eq_ignore_ascii_case(host))
+        {
+            allowed_hosts.push(host.clone());
         }
         let limits = Limits {
             max_sessions: self.max_sessions.max(1),
@@ -163,9 +178,26 @@ impl Cli {
             allowed_hosts,
             allowed_origins: non_empty(self.allowed_origins),
             font_dirs,
+            public_url: public_url.map(|(url, _)| url),
             limits,
         })
     }
+}
+
+/// `--public-url` を確かめ、（末尾の / を除いた URL, 小文字のホスト名）にする。http か https の
+/// 完全な URL だけを認め、利用者情報・クエリ・フラグメントは認めない。
+fn public_url(raw: Option<String>) -> Result<Option<(String, String)>, String> {
+    let Some(raw) = raw.map(|r| r.trim().to_string()).filter(|r| !r.is_empty()) else {
+        return Ok(None);
+    };
+    let invalid = || format!("--public-url must be an absolute http or https URL without a query, such as https://example.co.jp/artserver: {raw}");
+    let uri: http::Uri = raw.parse().map_err(|_| invalid())?;
+    let authority = uri
+        .authority()
+        .filter(|a| matches!(uri.scheme_str(), Some("http" | "https")) && !a.as_str().contains('@') && uri.query().is_none())
+        .ok_or_else(invalid)?;
+    let host = authority.host().trim_matches(['[', ']']).to_ascii_lowercase();
+    Ok(Some((raw.trim_end_matches('/').to_string(), host)))
 }
 
 /// フォントのフォルダを確かめ、絶対パスにする。存在しないフォルダは起動時の誤りとして知らせる。
@@ -254,5 +286,33 @@ mod tests {
             .resolve()
             .unwrap_err();
         assert!(err.contains("font folder"), "{err}");
+    }
+
+    #[test]
+    fn the_public_url_is_checked_and_its_host_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = dir.path().join("token");
+        std::fs::write(&token, "t".repeat(40)).unwrap();
+        let token = token.to_str().unwrap();
+        let config = cli(&["--token-file", token, "--public-url", "https://Art.Example.co.jp/artserver/"])
+            .resolve()
+            .unwrap();
+        assert_eq!(config.public_url.as_deref(), Some("https://Art.Example.co.jp/artserver"));
+        assert!(
+            config.allowed_hosts.iter().any(|h| h == "art.example.co.jp"),
+            "{:?}",
+            config.allowed_hosts
+        );
+        assert!(cli(&["--token-file", token]).resolve().unwrap().public_url.is_none());
+        for bad in [
+            "ftp://example.co.jp",
+            "/artserver",
+            "example.co.jp",
+            "https://example.co.jp/?a=1",
+            "https://user@example.co.jp",
+        ] {
+            let err = cli(&["--token-file", token, "--public-url", bad]).resolve().unwrap_err();
+            assert!(err.contains("--public-url"), "{bad}: {err}");
+        }
     }
 }

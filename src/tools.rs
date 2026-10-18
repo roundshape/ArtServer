@@ -82,6 +82,8 @@ type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<CallToolResponse, Error
 pub struct ArtServer {
     sessions: Arc<Sessions>,
     files: Arc<FileStore>,
+    /// 外から見える ArtServer の URL（--public-url）。書き出し結果の URL に使う
+    public_url: Option<Arc<str>>,
     call_timeout: Duration,
     tool_router: ToolRouter<Self>,
 }
@@ -192,7 +194,7 @@ impl Delivery {
 }
 
 impl ArtServer {
-    pub fn new(sessions: Arc<Sessions>, files: Arc<FileStore>, call_timeout: Duration) -> Self {
+    pub fn new(sessions: Arc<Sessions>, files: Arc<FileStore>, public_url: Option<Arc<str>>, call_timeout: Duration) -> Self {
         let mut tool_router = Self::tool_router();
         for tool in vectorcraft_tools() {
             tool_router.add_route(ToolRoute::new_dyn(tool.clone(), call_vectorcraft_tool));
@@ -200,6 +202,7 @@ impl ArtServer {
         Self {
             sessions,
             files,
+            public_url,
             call_timeout,
             tool_router,
         }
@@ -267,6 +270,14 @@ impl ArtServer {
         }
     }
 
+    /// 書き出し結果の URL の前の部分。--public-url があればそれ、なければこの要求が届いた ArtServer の URL。
+    fn download_base(&self, parts: &Parts) -> String {
+        match &self.public_url {
+            Some(url) => url.to_string(),
+            None => base_url(parts),
+        }
+    }
+
     /// 書き出し結果を預かり場所に入れ、取りに来るための URL を返す（docs/design-policy.md 4.6節）。
     fn deposit(&self, parts: &Parts, session: &str, format: ExportFormat, title: Option<&str>, exported: Value) -> Result<CallToolResult, ErrorData> {
         let data = match exported
@@ -294,7 +305,7 @@ impl ArtServer {
             "bytes": size,
             "warnings": exported.get("warnings").cloned().unwrap_or(json!([])),
             "download": {
-                "url": format!("{}{path}", base_url(parts)),
+                "url": format!("{}{path}", self.download_base(parts)),
                 "path": path,
                 "name": name,
                 "expiresInSeconds": deposit.expires_in.as_secs(),
@@ -542,7 +553,7 @@ fn export_result(format: ExportFormat, mut r: Value) -> CallToolResult {
 
 /// この要求が届いた ArtServer の URL（`http://127.0.0.1:8471` など）。Host は rmcp が許可リストで
 /// 検査済み。リバースプロキシの後ろでは X-Forwarded-Proto の https を使う。プロキシがパスの
-/// 前置き（/artserver/ など）を付ける構成には対応していない。
+/// 前置き（/artserver/ など）を付ける構成や、Host を書き換える構成では --public-url を使う。
 fn base_url(parts: &Parts) -> String {
     let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
     let host = header("host").unwrap_or("127.0.0.1");

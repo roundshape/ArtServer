@@ -195,6 +195,7 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | 書き出し1回あたりの描画スレッド数 |
 | `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | 大きい書き出し結果を預かっておく秒数 |
 | `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | 預かる書き出し結果の合計の上限（メモリに持つ） |
+| `--public-url` | `ARTSERVER_PUBLIC_URL` | なし | 外から見える ArtServer の URL（例: `https://example.co.jp/artserver`）。書き出し結果の URL に使う。リバースプロキシの後ろで指定する。ホスト名は `--allowed-hosts` に自動で加わる |
 | `--font-dirs` | `ARTSERVER_FONT_DIRS` | なし | OS に入っているフォントに加えて使うフォントのフォルダ（カンマ区切り）。組織で用意したフォントを置く用途。フォントのライセンスは運用する側で確認する |
 
 ログは標準エラー出力に出ます。詳しさは `RUST_LOG`（例: `RUST_LOG=debug`）で変えられます。
@@ -216,7 +217,9 @@ curl -o poster.pdf "http://127.0.0.1:8471/files/7f3a…"
 
 URL の ID（256ビットの乱数）が合鍵の代わりなので、**URL を知っている人は、期限までは誰でも取れます**。URL を共有の場所に貼らないでください。取ったファイルは、ブラウザの中では開かず、必ずダウンロードになります（`Content-Disposition: attachment`、`Content-Security-Policy: sandbox`、`X-Content-Type-Options: nosniff`）。Host と Origin は、`/mcp` と同じ許可リストで検査します。
 
-リバースプロキシの後ろで使う場合、URL のホスト名は届いた `Host`、スキームは `X-Forwarded-Proto` の https から作ります。プロキシがパスの前置き（`/artserver/` など）を付ける構成には、まだ対応していません。
+リバースプロキシの後ろで使う場合は、外から見える URL を `--public-url` で指定してください。例えば `--public-url https://example.co.jp/artserver` なら、書き出し結果の URL は `https://example.co.jp/artserver/files/…` になります（プロキシがパスの前置き `/artserver` を外して ArtServer に渡す構成にも対応します）。プロキシが `/files/` も ArtServer に渡すように設定してください。
+
+`--public-url` を指定しない場合は、届いた `Host` と `X-Forwarded-Proto` の https から URL を作ります。この場合、プロキシが利用者の使ったホスト名をそのまま `Host` で渡し、`X-Forwarded-Proto` を付ける必要があります（Caddy は既定でそうなる。nginx は `proxy_set_header Host $host;` と `proxy_set_header X-Forwarded-Proto $scheme;` が必要）。
 
 ## セキュリティ
 
