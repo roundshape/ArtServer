@@ -342,6 +342,6 @@ ArtServer を起動し直し、Claude Code から PDF を書き出して返っ�
 
 ### 次の作業
 
-1. Windows のビルドの確認（手動で実行する GitHub Actions）
+1. Windows のビルドの確認: 手動で実行する指示書 `.github/workflows/build-windows.yml` を追加した（`windows-latest` で `cargo build --locked`、テストはしない）。実行と結果の確認が残っている
 2. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
 3. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）

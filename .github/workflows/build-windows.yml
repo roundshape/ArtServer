@@ -1,0 +1,29 @@
+# Windows でビルドが通ることを確かめる。テストは実行しない（docs/progress.md 2026-10-18）
+# private リポジトリでは Windows のマシンは無料枠を Linux の約2倍使うため、push では動かさず、
+# GitHub の Actions の画面（または gh workflow run build-windows.yml）から手動で実行したときだけ動く
+name: build-windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 新しく実行したら、同じブランチの古い実行は止める
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust を用意する
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      # 依存のビルド結果を次回に持ち越して、実行時間を短くする
+      - uses: Swatinem/rust-cache@v2
+      - name: ビルド
+        run: cargo build --locked
