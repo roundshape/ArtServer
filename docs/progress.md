@@ -146,8 +146,32 @@
 | VectorCraft の参照 | commit 固定の git 依存はバージョン指定がないため、`wildcards` の検査に引っかかる。`deny.toml` で許可した |
 | yanked | `yoke-derive 0.8.3` が取り下げ済み（0.8.4 あり、取り下げ理由の記載なし）。`cargo update -p yoke-derive` で上げられるが未実施 |
 
+## 2026-10-18 Linux でのビルド確認（GitHub Actions）
+
+### 方針
+
+Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux に対応していることもあり、ビルドが通る状態は保つが、テストと動作確認はしない（ユーザーの判断）。
+
+### やったこと
+
+- `.github/workflows/build.yml` を追加した。push（main）と pull request のたびに、ubuntu-latest で `cargo build --locked` を実行する。
+  - 依存のビルド結果を Swatinem/rust-cache でキャッシュする
+  - 同じブランチで新しい push があれば、古い実行は止める
+  - 権限はリポジトリの読み取りだけ
+
+### 結果
+
+| 項目 | 内容 |
+|---|---|
+| 実行 | run 39084451667（commit `4390de1`） |
+| 結果 | 成功。警告・エラーなし |
+| 所要時間 | 全体 約16分半、うちビルド 15分49秒。ArtServer 自身のコンパイルとリンクは約3分 |
+
+- 時間がかかるのは、private リポジトリの GitHub のマシンが2コアであることと、開発用ビルドでも依存に `opt-level = 2` をかけているため。2回目からはキャッシュが効く。`Cargo.lock` が変わると再び長くなる
+- 長すぎる場合は `cargo check` に替える案がある（リンクまでは確かめられない）
+- GitHub の案内: `ubuntu-latest` は 2026-10-19 から順に Ubuntu 26 に切り替わる
+
 ### 次の作業
 
 1. yoke-derive を上げるかどうかの判断（上げる場合は再ビルドとテスト）
-2. Linux でビルドが通ることの確認（GitHub Actions、`.github/workflows/build.yml`。Linux で使う人は少ない見込みなので、テストと動作確認はしない）
-3. Phase 2: 日本語フォントの方針決定、ツールの拡充（テキスト、レイヤー、グループ、画像など）、PDF など大きい出力の受け渡し方（ファイル出力など）
+2. Phase 2: 日本語フォントの方針決定、ツールの拡充（テキスト、レイヤー、グループ、画像など）、PDF など大きい出力の受け渡し方（ファイル出力など）
