@@ -340,8 +340,13 @@ ArtServer を起動し直し、Claude Code から PDF を書き出して返っ�
 | `cargo test --offline --locked` | 54件すべて成功（単体39件、E2E 15件）。新しいテスト: `--public-url` の検査とホスト名の自動追加（単体）、`--public-url` を指定すると URL が `https://example.co.jp/artserver/files/…` になり、ArtServer 自身は `/files/…` で返すこと（E2E） |
 | `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
 
+## 2026-10-18 Windows でのビルド確認（GitHub Actions、手動実行）
+
+- `.github/workflows/build-windows.yml` を追加した。`windows-latest` で `cargo build --locked` を実行する（テストはしない）。private リポジトリでは Windows のマシンは無料枠を Linux の約2倍使うので、push では動かさず、手動で実行したときだけ動く（`gh workflow run build-windows.yml` または Actions の画面）。
+- 初回の実行（run 39120244900）は成功。警告・エラーなし。全体で約34分、うちビルド 32分20秒。`vendor/vectorcraft-svg` も Windows で差し替わってビルドされた。
+- これで macOS・Linux・Windows の3つでビルドが通ることを確かめた。Windows での動作（実機での実行）は未確認。
+
 ### 次の作業
 
-1. Windows のビルドの確認: 手動で実行する指示書 `.github/workflows/build-windows.yml` を追加した（`windows-latest` で `cargo build --locked`、テストはしない）。実行と結果の確認が残っている
-2. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
-3. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）
+1. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる
+2. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）
