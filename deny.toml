@@ -1,0 +1,48 @@
+# cargo deny の設定。依存のライセンス・脆弱性・取得元を検査する（docs/design-policy.md 9章）
+# 実行: cargo deny check
+
+[graph]
+# 配布するバイナリの対象。ここにない OS 専用の依存は検査しない
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+]
+# テストでだけ使う依存はバイナリに入らないので対象外
+exclude-dev = true
+
+[advisories]
+ignore = []
+
+[licenses]
+# GPL / LGPL / MPL / プロプライエタリは許可しない
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Zlib",
+    "Unicode-3.0",
+    "BSL-1.0",
+]
+confidence-threshold = 0.8
+exceptions = [
+    # (MIT OR Apache-2.0) AND IJG。IJG の文言は THIRD_PARTY_NOTICES に載せる
+    { crate = "jpeg-encoder", allow = ["IJG"] },
+]
+
+[bans]
+multiple-versions = "allow"
+# VectorCraft は git の commit 固定で参照しており、バージョン指定がないため wildcard と判定される
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# VectorCraft のエンジンと、PDF バックエンドの修正版（Cargo.toml の [patch.crates-io]）
+allow-git = [
+    "https://github.com/storytold/vectorcraft",
+    "https://github.com/storytold/craft-libs",
+]

@@ -115,8 +115,39 @@
 - 古いクライアント（`initialize` と `Mcp-Session-Id` を使うもの）での動作
 - Claude Code から PDF 書き出しを呼んだときの扱い。今は base64 を `structuredContent` に入れて返すので、大きい文書では会話が重くなるおそれがある
 
+## 2026-10-18 依存ライブラリのライセンス・脆弱性の検査
+
+### やったこと
+
+- cargo-deny 0.20.2 と cargo-about 0.9.2 を Homebrew で導入した。
+- `deny.toml` を作った。
+  - 許可するライセンス: MIT、Apache-2.0、BSD-2-Clause、BSD-3-Clause、Zlib、Unicode-3.0、BSL-1.0。`jpeg-encoder` だけ IJG も許可
+  - 対象: macOS と Linux（aarch64・x86_64）。テスト専用の依存は除く
+  - 取得元: crates.io と、GitHub の storytold/vectorcraft・storytold/craft-libs だけ
+- `about.toml` と `about.hbs` を作り、`THIRD_PARTY_NOTICES.md` を要約から全文入りに置き換えた（286 クレート、ライセンス文 141 種類、約 226KB）。
+  - 前半は `about.hbs` に手書き: VectorCraft の由来、同梱フォント4種の著作権表示と OFL-1.1 の全文、Adobe CMap と PDFium フォントの BSD-3-Clause の全文、IJG の文言、krilla の MIT 表示。全文は、ビルドに使うソースのファイルからそのまま差し込んだ
+  - 後半は cargo about が `Cargo.lock` から生成
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo deny check` | advisories ok、bans ok、licenses ok、sources ok。警告1件（yanked、下記） |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功 |
+
+### 分かったことと対処
+
+| 項目 | 内容 |
+|---|---|
+| LICENSE ファイルを同梱していないクレート | VectorCraft の21クレート、craft-pdf、krilla など32個で、著作権者が空欄のひな形（`Copyright (c) <year> <copyright holders>`）になっていた。`about.toml` の `clarify` で正しいファイルを指定した。chrono は cargo about に組み込みの対処（`workarounds`）で解決した |
+| 生成にネットワークが必要 | alloc-stdlib、wasmi（4クレート）、wasmparser はクレートに LICENSE がないため、元のリポジトリの該当 commit から取得する。checksum が合わなければ生成が失敗するので、文面が黙って変わることはない |
+| krilla | craft-libs に取り込まれた版に LICENSE がなく、自動では取れない。元のリポジトリの MIT 表示を `about.hbs` に手書きで載せた。生成部分では汎用の MIT の文面の下に並ぶ |
+| テスト専用の依存 | cargo deny は、`[dev-dependencies]` で有効にした rmcp の機能（reqwest、aws-lc-sys など）も数える。`cargo tree -e normal --target all` でバイナリには入らないことを確認した。数えすぎる分には安全側なのでそのままにした。cargo about は正しく除外する |
+| VectorCraft の参照 | commit 固定の git 依存はバージョン指定がないため、`wildcards` の検査に引っかかる。`deny.toml` で許可した |
+| yanked | `yoke-derive 0.8.3` が取り下げ済み（0.8.4 あり、取り下げ理由の記載なし）。`cargo update -p yoke-derive` で上げられるが未実施 |
+
 ### 次の作業
 
-1. `cargo deny` / `cargo about` の導入とライセンス表示の生成
+1. yoke-derive を上げるかどうかの判断（上げる場合は再ビルドとテスト）
 2. Linux でのビルド・テスト
 3. Phase 2: 日本語フォントの方針決定、ツールの拡充（テキスト、レイヤー、グループ、画像など）、PDF など大きい出力の受け渡し方（ファイル出力など）

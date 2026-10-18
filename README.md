@@ -204,6 +204,19 @@ cargo test
 
 単体テストと、実際に待ち受けたサーバーに MCP クライアントで接続するエンドツーエンドのテストが走ります。
 
+## 依存ライブラリのライセンスと脆弱性
+
+[cargo-deny](https://github.com/EmbarkStudios/cargo-deny) と [cargo-about](https://github.com/EmbarkStudios/cargo-about) を使います（例: `brew install cargo-deny cargo-about`）。
+
+```sh
+cargo deny check                                          # ライセンス・脆弱性・取得元の検査（設定は deny.toml）
+cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md  # ライセンス表示の生成（設定は about.toml）
+```
+
+- 依存を追加・更新したら両方を実行し、`THIRD_PARTY_NOTICES.md` を更新します。
+- `cargo deny check` は脆弱性のデータベース（RustSec）を、`cargo about generate` は一部のクレートのライセンス文を GitHub から取得するので、ネットワークが必要です。
+- `THIRD_PARTY_NOTICES.md` は生成物です。前半の手書きの部分を変えるときは `about.hbs` を編集します。
+
 ## ドキュメント
 
 - [設計方針](docs/design-policy.md)

@@ -1,0 +1,102 @@
+# cargo about の設定。THIRD_PARTY_NOTICES.md を生成する（docs/design-policy.md 9章）
+# 生成: cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md
+# LICENSE ファイルを同梱していないクレートの一部は、元のリポジトリから取得するためネットワークが必要
+
+# 「A OR B」のライセンスでは、この並びで先にあるものを採用する
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Zlib",
+    "Unicode-3.0",
+    "BSL-1.0",
+]
+# deny.toml の [graph] targets と揃える
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+]
+# テスト用・ビルド時だけの依存はバイナリに入らない
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
+# cargo about に組み込みの対処。chrono は MIT と Apache-2.0 を1つのファイルにまとめている
+workarounds = ["chrono"]
+
+[jpeg-encoder]
+accepted = ["IJG"]
+
+# 以下は LICENSE ファイルを同梱していない、または読み取れない形で同梱しているクレートの指定。
+# checksum はファイルの SHA-256。ファイルが変わると生成が失敗するので、確認して更新する
+
+# VectorCraft のクレートは、リポジトリ直下の LICENSE-MIT だけを持つ
+[vectorcraft-affinity]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-brush]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-cad]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-color]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-doc]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-effects]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-engine]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-eps]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-format]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-geom]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-metafile]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-pathops]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-pdf]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-plugins]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-render]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-scriptcheck]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-svg]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-text]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-three-d]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-tools]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-trace]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+
+# craft-libs も同じ
+[craft-pdf]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "2f42c0cafc8ad394d91373fe1f342aee5453850b151a51405c68cae9ada86d26" }] }
+
+# BSD-3-Clause/MIT のうち、同梱している BSD-3-Clause の文面を使う
+[brotli-decompressor]
+clarify = { license = "BSD-3-Clause", files = [{ path = "LICENSE", license = "BSD-3-Clause", checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae" }] }
+
+# LICENSE.txt のうち MIT の部分（start〜end の文字列で切り出す）
+[libm]
+clarify = { license = "MIT", files = [{ path = "LICENSE.txt", license = "MIT", start = "Permission is hereby granted", end = "SOFTWARE.", checksum = "21a2121221d2a35df2d8d333d00a61ed240446b6107092741ff996941acdc919" }] }
+
+# 以下はクレートに LICENSE ファイルがないため、元のリポジトリから取得する
+[alloc-stdlib]
+clarify = { license = "BSD-3-Clause", git = [{ path = "LICENSE", license = "BSD-3-Clause", checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae" }] }
+[wasmi]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "172bc1497507c1c363496bc23b0f16de8fa8e94befa85db6c8d9fa790e0a8657" }] }
+[wasmi_collections]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "172bc1497507c1c363496bc23b0f16de8fa8e94befa85db6c8d9fa790e0a8657" }] }
+[wasmi_core]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "172bc1497507c1c363496bc23b0f16de8fa8e94befa85db6c8d9fa790e0a8657" }] }
+[wasmi_ir]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "172bc1497507c1c363496bc23b0f16de8fa8e94befa85db6c8d9fa790e0a8657" }] }
+[wasmparser]
+clarify = { license = "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3" }] }
