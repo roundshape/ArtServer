@@ -210,9 +210,47 @@ Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux �
 - 日本語の文字が、ヒラギノなど実際の日本語フォントで描かれているか（テストは文字の配置と書き出しだけを確かめている）
 - エンジンを動かしてのコマンド数の確認（約760は静的に数えた値）
 
+## 2026-10-18 Illustrator での確認と、SVG の文字の太さの修正
+
+### 確認したこと
+
+- 新しいバイナリの ArtServer に curl で要求を送り、日本語の文字（ヒラギノ角ゴ W6、ヒラギノ明朝 W6、ヒラギノ丸ゴ W4、縦書き）と図形の文書を作って、`~/Desktop/artserver-output/` に SVG・アウトライン化した SVG・PDF を書き出した。フォントはすべて「exact」（ぴったり一致）。
+  - この会話の Claude Code はツールの一覧を読み込み直していなかったため、新しいツールを Claude Code から直接は使っていない（未確認のまま）。
+- ユーザーが Illustrator で開いたところ、アウトライン化した SVG は正しく、文字を残した SVG では角ゴと明朝が細い太さ（W3 など）で表示された。
+
+### 原因と修正
+
+| 項目 | 内容 |
+|---|---|
+| 原因 | VectorCraft の SVG の書き出しは、スタイル名から太さを `vectorcraft_text::style_weight` で決める。この関数は英語の単語（Light、Bold など）しか読まないため「W6」は 400 になり、400 のときは `font-weight` を書かない |
+| 直し方 | ユーザーと決めた方針（設計方針 8章）で、`vectorcraft-svg` だけを `vendor/vectorcraft-svg` にコピーし、`src/css.rs` の `font_descriptor` で W0〜W9 を数字 × 100 の太さとして読むようにした。`Cargo.toml` の `[patch."https://github.com/storytold/vectorcraft"]` で差し替える |
+| 影響の範囲 | SVG（と CSS）の書き出しだけ。フォントを選ぶ処理は変えていない |
+| 記録 | `vendor/README.md`（修正の内容、載せ直しの手順）、`vendor/patches/vectorcraft-svg.diff`（元のコードとの差分） |
+| ライセンス | コピーした crate に VectorCraft の `LICENSE-MIT` と `LICENSE-APACHE` を置いた。`cargo about` がそれを ArtServer 自身のライセンスとも数えたので、`about.toml` で ArtServer のライセンスのファイルを明示した |
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo build --all-targets --offline` | 成功。`Cargo.lock` の変更は `vectorcraft-svg` の取得元の1行だけ |
+| `cargo test --offline --locked` | 44件すべて成功（単体31件、E2E 13件）。新しいテスト: W6・W3 のスタイル名が SVG の `font-weight` 600・300 になり、Regular は付かず、Bold は bold のまま |
+| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+| `cargo deny check` | すべて ok（yanked の警告1件は従来どおり） |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功 |
+
+### 修正後の確認
+
+- ArtServer を修正後のバイナリで起動し直し、サンプルを書き出し直した。`sample.svg` では、ヒラギノ角ゴ W6 と明朝 W6 の文字に `font-weight="600"` が付いた（丸ゴ W4 は標準の太さなので付かない）。
+- ユーザーが Illustrator で開き、角ゴと明朝が W6 の太さで表示されることを確認した。PostScript 名を書く追加の修正は不要だった。
+
+### 未確認
+
+- Claude Code から新しいツールを使った確認（ツールの一覧の読み込み直しが必要）
+
 ### 次の作業
 
 1. Claude Code での確認（新しいツール、日本語の文字、`command_run`）
-2. 大きいデータの受け渡し（設計方針 4.6節）
-3. Windows のビルドの確認（手動で実行する GitHub Actions）
-4. VectorCraft の更新への追従と、yoke-derive の更新
+2. 本家 VectorCraft への修正の提案（文面は用意し、送るのはユーザー）
+3. 大きいデータの受け渡し（設計方針 4.6節。置き場所はメモリかディスクかを決める）
+4. Windows のビルドの確認（手動で実行する GitHub Actions）
+5. VectorCraft の更新への追従と、yoke-derive の更新

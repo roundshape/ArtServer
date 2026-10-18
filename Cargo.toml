@@ -64,3 +64,7 @@ hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63
 hayro-interpret = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 krilla = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
+
+# VectorCraft の不具合を ArtServer で直した crate。修正の内容と載せ直しの手順は vendor/README.md
+[patch."https://github.com/storytold/vectorcraft"]
+vectorcraft-svg = { path = "vendor/vectorcraft-svg" }

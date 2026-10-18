@@ -1,0 +1,35 @@
+# ArtServer が修正して使う、VectorCraft の vectorcraft-svg のコピー（commit fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c）。
+# 修正の内容と、VectorCraft を更新するときの載せ直しの手順は vendor/README.md を参照。
+#
+# 元の Cargo.toml は VectorCraft のワークスペースの設定（workspace = true）を引き継いでいるため、
+# 同じ commit の値を直接書いた。VectorCraft の他の crate は、ArtServer と同じ commit の GitHub を指す。
+# テスト（tests/ と dev-dependencies）は ArtServer のビルドで使わないので含めていない。
+[package]
+name = "vectorcraft-svg"
+version = "0.12.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "VectorCraft SVG import and export"
+publish = false
+
+[lints.rust]
+unsafe_code = "deny"
+
+[dependencies]
+vectorcraft-geom = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-color = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-doc = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-effects = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-brush = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c", default-features = false }
+kurbo = { version = "0.13", features = ["serde"] }
+usvg = { version = "0.48", default-features = false, features = ["svgz"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive", "rc"] }
+# Live effect params read from filters.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+# SVGZ (gzip, pure-Rust backend: builds for wasm).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "tiff", "bmp"] }
+# Colour / transform / length parsing for the <text> fallback (MIT OR Apache-2.0; already used by usvg).
+svgtypes = "0.16"

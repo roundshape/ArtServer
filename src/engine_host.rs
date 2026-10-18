@@ -399,4 +399,42 @@ mod tests {
         assert!(ids.iter().all(|id| policy::is_allowed(id, Caller::VectorCraftTool)), "{ids:?}");
         assert!(!ids.contains(&"document.export") && !ids.contains(&"prefs.set"), "{ids:?}");
     }
+
+    #[tokio::test]
+    async fn japanese_weight_names_reach_the_svg() {
+        // vendor/vectorcraft-svg の修正: W0〜W9 のスタイル名が SVG の font-weight になる。
+        // SVG に書くのは指定したスタイル名から決まる値なので、フォントが入っていない環境でも同じ結果になる
+        let dir = tempfile::tempdir().unwrap();
+        let host = host_with_document(&dir).await;
+        let mut steps = Vec::new();
+        for (i, (font, style)) in [
+            ("Hiragino Sans", "W6"),
+            ("Hiragino Mincho ProN", "W3"),
+            ("Inter", "Regular"),
+            ("Source Sans 3", "Bold"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let y = 30 + 30 * i;
+            steps.push(Step::new(
+                "text.create",
+                json!({"x": 10, "y": y, "text": format!("t{i}"), "font": font, "style": style}),
+            ));
+        }
+        steps.push(Step::new("document.export", json!({"format": "svg"})));
+        let results = host.run(steps, CancelToken::new()).await.unwrap();
+        let data = results[4]["dataBase64"].as_str().unwrap();
+        let svg = String::from_utf8(base64::engine::general_purpose::STANDARD.decode(data).unwrap()).unwrap();
+        let text_tag = |name: &str| {
+            svg.split("<text")
+                .find(|t| t.contains(&format!(">{name}<")) || t.contains(&format!(">{name}</")))
+                .map(|t| t.split('>').next().unwrap_or_default().to_string())
+                .unwrap_or_else(|| panic!("no <text> for {name}: {svg}"))
+        };
+        assert!(text_tag("t0").contains(r#"font-weight="600""#), "{}", text_tag("t0"));
+        assert!(text_tag("t1").contains(r#"font-weight="300""#), "{}", text_tag("t1"));
+        assert!(!text_tag("t2").contains("font-weight"), "{}", text_tag("t2"));
+        assert!(text_tag("t3").contains(r#"font-weight="bold""#), "{}", text_tag("t3"));
+    }
 }

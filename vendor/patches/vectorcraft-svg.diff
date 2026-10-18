@@ -1,0 +1,28 @@
+--- a/src/css.rs
++++ b/src/css.rs
+@@ -73,9 +73,24 @@
+ /// rules and the characters using them say, so each face is told apart (Semibold from Bold).
+ pub(crate) fn font_descriptor(st: &CharStyle) -> (u16, bool) {
+     let fs = st.font_style.to_ascii_lowercase();
+-    (vectorcraft_text::style_weight(&st.font_style).round().clamp(1.0, 1000.0) as u16, fs.contains("italic") || fs.contains("oblique"))
++    (style_css_weight(&st.font_style).round().clamp(1.0, 1000.0) as u16, fs.contains("italic") || fs.contains("oblique"))
+ }
+ 
++/// The CSS weight of face style `style`. Japanese faces (Hiragino, Morisawa…) name their weights
++/// W0–W9: each is its number × 100 (W3 300, W6 600; W0 and W1 100). Other names go through
++/// `style_weight`, which reads English words only and would make every W style 400 (ArtServer
++/// patch: vendor/README.md).
++fn style_css_weight(style: &str) -> f32 {
++    let w_number = style.split(|c: char| c.is_whitespace() || c == '-' || c == '_').find_map(|part| match part.as_bytes() {
++        [b'W' | b'w', d @ b'0'..=b'9'] => Some(f32::from(d - b'0')),
++        _ => None,
++    });
++    match w_number {
++        Some(n) => (n * 100.0).max(100.0),
++        None => vectorcraft_text::style_weight(style),
++    }
++}
++
+ /// The font of character style `st`: family, size (the vertical scale; writers stretch the
+ /// horizontal one), weight and style, lengths written by `len`. The weight is the style's number
+ /// (600 for Semibold, 300 for Light), `bold` for 700 and left out for 400.

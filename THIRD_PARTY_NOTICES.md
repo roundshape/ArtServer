@@ -4056,11 +4056,11 @@ Used by:
 - vectorcraft-plugins 0.12.0
 - vectorcraft-render 0.12.0
 - vectorcraft-scriptcheck 0.12.0
-- vectorcraft-svg 0.12.0
 - vectorcraft-text 0.12.0
 - vectorcraft-three-d 0.12.0
 - vectorcraft-tools 0.12.0
 - vectorcraft-trace 0.12.0
+- vectorcraft-svg 0.12.0
 
 ```text
 MIT License

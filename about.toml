@@ -28,6 +28,10 @@ workarounds = ["chrono"]
 [jpeg-encoder]
 accepted = ["IJG"]
 
+# ArtServer 自身。フォルダの中の vendor/ にある VectorCraft のライセンスのファイルを、ArtServer のものと数えないよう明示する
+[artserver]
+clarify = { license = "MIT", files = [{ path = "LICENSE", license = "MIT", checksum = "3701a8f0da4aaa48c540dfdfa7f0011e823f033f144e3e9ecadc3f4cbd67640e" }] }
+
 # 以下は LICENSE ファイルを同梱していない、または読み取れない形で同梱しているクレートの指定。
 # checksum はファイルの SHA-256。ファイルが変わると生成が失敗するので、確認して更新する
 
@@ -67,7 +71,8 @@ clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", licens
 [vectorcraft-scriptcheck]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-svg]
-clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+# vendor/ に置いた修正版（vendor/README.md）。ライセンスのファイルもコピーしてある
+clarify = { license = "MIT OR Apache-2.0", files = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-text]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-three-d]
