@@ -1,8 +1,9 @@
 //! エンジン実行境界。
 //!
 //! 作業セッション1つにつき専用スレッドを1本持ち、そのスレッドだけがエンジンの `Session` を
-//! 触る。境界を越えるのはコマンド ID と JSON の引数・結果だけ（docs/design-policy.md 4.3節）。
-//! 同じ作業セッションへの要求は届いた順に1件ずつ実行し、待ち行列が溢れたら混雑として断る。
+//! 触る。境界を越えるのは、コマンド ID・ツール名と JSON の引数・結果だけ
+//! （docs/design-policy.md 4.3節）。同じ作業セッションへの要求は届いた順に1件ずつ実行し、
+//! 待ち行列が溢れたら混雑として断る。
 
 use std::fmt;
 use std::sync::Arc;
@@ -13,8 +14,10 @@ use tokio::sync::{mpsc, oneshot};
 use vectorcraft_engine::cancel::{self, CancelToken};
 use vectorcraft_engine::file_access::{self, AutomationRoots};
 use vectorcraft_engine::{EngineError, Session};
+use vectorcraft_mcp::ToolResult;
 
-use crate::policy;
+use crate::backend::GuardedBackend;
+use crate::policy::{self, Caller};
 
 /// エンジンのスレッドのスタック。読み込み処理は自前の大きなスタックのスレッドを使うので、
 /// ここは通常のコマンドが足りる大きさでよい。
@@ -84,10 +87,24 @@ pub struct EngineLimits {
     pub history_bytes: usize,
 }
 
+/// 実行器に頼む仕事。
+enum Work {
+    /// ArtServer のツールが組み立てたコマンド列
+    Steps(Vec<Step>),
+    /// VectorCraft のツール1つ（GuardedBackend の上で動かす）
+    Tool { name: String, args: Value },
+}
+
+/// 仕事の結果。
+enum Done {
+    Steps(Vec<Value>),
+    Tool(ToolResult),
+}
+
 struct Job {
-    steps: Vec<Step>,
+    work: Work,
     token: CancelToken,
-    reply: oneshot::Sender<Result<Vec<Value>, HostError>>,
+    reply: oneshot::Sender<Result<Done, HostError>>,
 }
 
 /// 作業セッション1つ分のエンジン実行器。落とすと実行スレッドも終わる。
@@ -109,8 +126,24 @@ impl EngineHost {
 
     /// `steps` を順に実行し、各ステップの結果を返す。`token` を立てるとエンジンに中断を求める。
     pub async fn run(&self, steps: Vec<Step>, token: CancelToken) -> Result<Vec<Value>, HostError> {
+        match self.submit(Work::Steps(steps), token).await? {
+            Done::Steps(results) => Ok(results),
+            Done::Tool(_) => Err(HostError::Stopped),
+        }
+    }
+
+    /// VectorCraft のツール `name` を `args` で実行する。エンジンへの呼び出しはすべて
+    /// GuardedBackend の検査を通る。
+    pub async fn run_tool(&self, name: String, args: Value, token: CancelToken) -> Result<ToolResult, HostError> {
+        match self.submit(Work::Tool { name, args }, token).await? {
+            Done::Tool(result) => Ok(result),
+            Done::Steps(_) => Err(HostError::Stopped),
+        }
+    }
+
+    async fn submit(&self, work: Work, token: CancelToken) -> Result<Done, HostError> {
         let (reply, answer) = oneshot::channel();
-        self.jobs.try_send(Job { steps, token, reply }).map_err(|e| match e {
+        self.jobs.try_send(Job { work, token, reply }).map_err(|e| match e {
             TrySendError::Full(_) => HostError::Busy,
             TrySendError::Closed(_) => HostError::Stopped,
         })?;
@@ -126,7 +159,18 @@ fn serve(mut jobs: mpsc::Receiver<Job>, limits: &EngineLimits, roots: &Arc<Autom
             Err(HostError::Cancelled)
         } else {
             file_access::confine(Some(roots), || {
-                cancel::scope(&job.token, None, || run_steps(&mut session, &job.steps, limits))
+                cancel::scope(&job.token, None, || match &job.work {
+                    Work::Steps(steps) => run_steps(&mut session, steps, limits).map(Done::Steps),
+                    Work::Tool { name, args } => {
+                        let result = vectorcraft_mcp::call_tool(&mut GuardedBackend::new(&mut session, limits), name, args);
+                        // 中断されたツールは途中までしか動いていないので、結果ではなく中断として返す
+                        if job.token.is_cancelled() {
+                            Err(HostError::Cancelled)
+                        } else {
+                            Ok(Done::Tool(result))
+                        }
+                    }
+                })
             })
         };
         let _ = job.reply.send(result);
@@ -141,25 +185,35 @@ fn run_steps(session: &mut Session, steps: &[Step], limits: &EngineLimits) -> Re
         } else {
             step.params.clone()
         };
-        policy::check(step.command, &params).map_err(HostError::Rejected)?;
-        // エンジンは本番ビルドでは未知の引数を検査しないので、ここで検査する
-        session
-            .check_params(step.command, &params)
-            .map_err(|e| HostError::Rejected(e.to_string()))?;
-        let opens_document = matches!(step.command, "file.new" | "document.open");
-        if opens_document && session.documents().len() >= limits.max_documents {
-            return Err(HostError::Rejected(format!(
-                "at most {} documents may be open in one session",
-                limits.max_documents
-            )));
-        }
-        let value = session.execute(step.command, &params).map_err(engine_error)?;
-        if opens_document && let Ok(doc) = session.doc_mut() {
-            doc.history.byte_budget = limits.history_bytes;
-        }
-        results.push(value);
+        results.push(execute_checked(session, step.command, &params, limits, Caller::ArtServer)?);
     }
     Ok(results)
+}
+
+/// 許可リスト・引数・資源の上限を検査してから、コマンドを1つ実行する。エンジンへの
+/// コマンドはすべてここを通る。
+pub(crate) fn execute_checked(
+    session: &mut Session,
+    command: &str,
+    params: &Value,
+    limits: &EngineLimits,
+    caller: Caller,
+) -> Result<Value, HostError> {
+    policy::check(command, params, caller).map_err(HostError::Rejected)?;
+    // エンジンは本番ビルドでは未知の引数を検査しないので、ここで検査する
+    session.check_params(command, params).map_err(|e| HostError::Rejected(e.to_string()))?;
+    let opens_document = matches!(command, "file.new" | "document.open");
+    if opens_document && session.documents().len() >= limits.max_documents {
+        return Err(HostError::Rejected(format!(
+            "at most {} documents may be open in one session",
+            limits.max_documents
+        )));
+    }
+    let value = session.execute(command, params).map_err(engine_error)?;
+    if opens_document && let Ok(doc) = session.doc_mut() {
+        doc.history.byte_budget = limits.history_bytes;
+    }
+    Ok(value)
 }
 
 fn engine_error(e: EngineError) -> HostError {
@@ -273,5 +327,76 @@ mod tests {
             "{}",
             results[0]
         );
+    }
+
+    async fn tool(host: &EngineHost, name: &str, args: Value) -> ToolResult {
+        host.run_tool(name.to_string(), args, CancelToken::new()).await.unwrap()
+    }
+
+    fn text_of(r: &ToolResult) -> String {
+        r.content.iter().filter_map(|c| c["text"].as_str()).collect::<Vec<_>>().join("\n")
+    }
+
+    async fn host_with_document(dir: &tempfile::TempDir) -> EngineHost {
+        let host = host(dir, 2);
+        host.run(vec![Step::new("file.new", json!({"width": 300, "height": 200}))], CancelToken::new())
+            .await
+            .unwrap();
+        host
+    }
+
+    #[tokio::test]
+    async fn vectorcraft_tools_run_through_the_guarded_backend() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host_with_document(&dir).await;
+        let r = tool(&host, "add_text", json!({"text": "こんにちは ArtServer", "x": 20, "y": 50, "size": 24})).await;
+        assert!(!r.is_error, "{}", text_of(&r));
+        let r = tool(
+            &host,
+            "draw_shape",
+            json!({"shape": "rectangle", "x": 10, "y": 10, "width": 50, "height": 30, "fill": "#3366ff", "stroke": "none"}),
+        )
+        .await;
+        assert!(!r.is_error, "{}", text_of(&r));
+        let id = serde_json::from_str::<Value>(&text_of(&r)).unwrap()["id"].as_u64().unwrap();
+        let r = tool(&host, "transform", json!({"ids": [id], "dx": 5, "rotate": 15})).await;
+        assert!(!r.is_error, "{}", text_of(&r));
+        let r = tool(&host, "render_preview", json!({"max_side": 200})).await;
+        assert!(!r.is_error, "{}", text_of(&r));
+        assert_eq!(r.content[0]["type"], "image");
+    }
+
+    #[tokio::test]
+    async fn the_guarded_backend_refuses_what_the_policy_does_not_allow() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host_with_document(&dir).await;
+        for (name, args) in [
+            ("command_run", json!({"id": "prefs.set", "params": {}})),
+            ("command_run", json!({"id": "document.export", "params": {"format": "svg"}})),
+            ("command_run", json!({"id": "file.new", "params": {}})),
+            ("command_batch", json!({"steps": [{"id": "plugin.install", "params": {}}]})),
+        ] {
+            let r = tool(&host, name, args.clone()).await;
+            assert!(text_of(&r).contains("not allowed"), "{name} {args}: {}", text_of(&r));
+        }
+        // 画面の操作とファイルの読み書きの窓口は、ツールの名前を直接指定しても使えない
+        for (name, args) in [("select_tool", json!({"tool": "pen"})), ("open_file", json!({"path": "/etc/hosts"}))] {
+            let r = tool(&host, name, args).await;
+            assert!(r.is_error, "{name}: {}", text_of(&r));
+            assert!(text_of(&r).contains("not available"), "{name}: {}", text_of(&r));
+        }
+    }
+
+    #[tokio::test]
+    async fn command_list_shows_only_allowed_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host_with_document(&dir).await;
+        let r = tool(&host, "command_list", json!({"brief": true})).await;
+        assert!(!r.is_error, "{}", text_of(&r));
+        let list: Value = serde_json::from_str(&text_of(&r)).unwrap();
+        let ids: Vec<&str> = list.as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+        assert!(ids.contains(&"text.setText"), "{ids:?}");
+        assert!(ids.iter().all(|id| policy::is_allowed(id, Caller::VectorCraftTool)), "{ids:?}");
+        assert!(!ids.contains(&"document.export") && !ids.contains(&"prefs.set"), "{ids:?}");
     }
 }

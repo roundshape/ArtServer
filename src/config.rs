@@ -60,6 +60,11 @@ pub struct Cli {
     /// 書き出し1回あたりの描画スレッド数（0: 呼び出したスレッドだけで描く）
     #[arg(long, env = "ARTSERVER_RENDER_THREADS", default_value_t = Limits::default().render_threads)]
     pub render_threads: u16,
+
+    /// OS に入っているフォントに加えて使うフォントのフォルダ（カンマ区切り）。組織で用意した
+    /// フォントを置く用途（docs/design-policy.md 1.1節）
+    #[arg(long, env = "ARTSERVER_FONT_DIRS", value_delimiter = ',')]
+    pub font_dirs: Vec<PathBuf>,
 }
 
 const MIB: usize = 1024 * 1024;
@@ -71,6 +76,8 @@ pub struct Config {
     pub token: String,
     pub allowed_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,
+    /// 追加で読み込むフォントのフォルダ（絶対パス）
+    pub font_dirs: Vec<PathBuf>,
     pub limits: Limits,
 }
 
@@ -133,14 +140,28 @@ impl Cli {
             render_threads: self.render_threads,
             ..Limits::default()
         };
+        let font_dirs = font_dirs(self.font_dirs)?;
         Ok(Config {
             bind: self.bind,
             token,
             allowed_hosts,
             allowed_origins: non_empty(self.allowed_origins),
+            font_dirs,
             limits,
         })
     }
+}
+
+/// フォントのフォルダを確かめ、絶対パスにする。存在しないフォルダは起動時の誤りとして知らせる。
+fn font_dirs(dirs: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
+    dirs.into_iter()
+        .filter(|d| !d.as_os_str().is_empty())
+        .map(|d| match std::fs::canonicalize(&d) {
+            Ok(path) if path.is_dir() => Ok(path),
+            Ok(_) => Err(format!("the font folder {} is not a directory", d.display())),
+            Err(e) => Err(format!("cannot use the font folder {}: {e}", d.display())),
+        })
+        .collect()
 }
 
 fn non_empty(values: Vec<String>) -> Vec<String> {
@@ -198,5 +219,24 @@ mod tests {
         let config = cli(&["--token-file", path.to_str().unwrap()]).resolve().unwrap();
         assert_eq!(config.token, "t".repeat(40));
         assert!(config.bind.ip().is_loopback());
+    }
+
+    #[test]
+    fn font_folders_must_exist_and_become_absolute() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = dir.path().join("token");
+        std::fs::write(&token, "t".repeat(40)).unwrap();
+        let fonts = dir.path().join("fonts");
+        std::fs::create_dir(&fonts).unwrap();
+        let config = cli(&["--token-file", token.to_str().unwrap(), "--font-dirs", fonts.to_str().unwrap()])
+            .resolve()
+            .unwrap();
+        assert_eq!(config.font_dirs, vec![std::fs::canonicalize(&fonts).unwrap()]);
+
+        let missing = dir.path().join("missing");
+        let err = cli(&["--token-file", token.to_str().unwrap(), "--font-dirs", missing.to_str().unwrap()])
+            .resolve()
+            .unwrap_err();
+        assert!(err.contains("font folder"), "{err}");
     }
 }

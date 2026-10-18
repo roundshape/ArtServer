@@ -48,6 +48,8 @@ clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", licens
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-eps]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+[vectorcraft-mcp]
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-format]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-geom]

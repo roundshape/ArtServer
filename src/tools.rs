@@ -1,34 +1,71 @@
-//! MCP のツール定義。ツール1つをエンジンのコマンド列に変換し、作業セッションの実行器に渡す。
+//! MCP のツール定義。
+//!
+//! ArtServer のツール（作業セッション、文書の作成・読み込み・書き出し、フォントの一覧）は
+//! ここで定義し、エンジンのコマンド列に変換する。それ以外の編集は VectorCraft のツールを
+//! そのまま公開し、作業セッションの実行器で GuardedBackend の上で動かす
+//! （docs/design-policy.md 4.7節）。
 //!
 //! 引数の構造体のドキュメントコメントは、そのままツールの入力スキーマの説明として AI に
 //! 見せるため英語で書く。
 
-use std::sync::Arc;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use base64::Engine as _;
 use http::request::Parts;
-use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::handler::server::tool::Extension;
+use rmcp::handler::server::router::tool::{ToolRoute, ToolRouter};
+use rmcp::handler::server::tool::{Extension, ToolCallContext};
 use rmcp::handler::server::wrapper::Parameters;
-use rmcp::model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig};
+use rmcp::model::{CallToolResponse, CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig, Tool};
 use rmcp::{ErrorData, ServerHandler, schemars, tool, tool_handler, tool_router};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use vectorcraft_engine::cancel::CancelToken;
+use vectorcraft_mcp::ToolResult;
 
 use crate::auth::Principal;
 use crate::engine_host::{HostError, Step};
 use crate::session::{SessionError, Sessions};
 
 const INSTRUCTIONS: &str = "ArtServer edits vector documents. Call session_create first and pass the returned `session` \
-to every other tool. Create a document with document_new (or import_svg), draw with the draw_* tools, then \
-export_document. Coordinates are in points (1/72 inch), origin at the artboard's top-left, y down. Object ids \
-returned by draw_* tools are used by set_paint and move_objects.";
+to every other tool. Create a document with document_new (or import_svg), draw and edit with the dedicated tools \
+(draw_shape, draw_path, add_text, transform, set_paint, pathfinder, apply_effect, create_graph, text_wrap), check the \
+result with doc_inspect or render_preview, then export_document. For anything else, find a command with command_list \
+and run it with command_run (or several with command_batch); only the commands command_list shows are available. \
+Pass object ids explicitly as `ids` rather than relying on the selection. Coordinates are in points (1/72 inch), \
+origin at the artboard's top-left, y down. list_fonts tells which font families this server has.";
+
+/// 公開する VectorCraft のツール（docs/design-policy.md 4.7節）。
+const VECTORCRAFT_TOOLS: &[&str] = &[
+    "draw_shape",
+    "draw_path",
+    "set_paint",
+    "transform",
+    "add_text",
+    "pathfinder",
+    "apply_effect",
+    "create_graph",
+    "text_wrap",
+    "render_preview",
+    "doc_inspect",
+    "undo",
+    "redo",
+    "command_list",
+    "command_run",
+    "command_batch",
+];
+
+/// VectorCraft のツールに足す、作業セッションのハンドルの引数の説明。
+const SESSION_DESCRIPTION: &str = "Session handle returned by session_create.";
 
 /// PNG 書き出しの倍率の上限。
 const MAX_PNG_SCALE: f64 = 16.0;
+
+/// VectorCraft のツールの呼び出し口が返す future。
+type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<CallToolResponse, ErrorData>> + Send + 'a>>;
 
 /// MCP サーバー本体。要求ごとに作られる（中身は共有の作業セッション表への参照）。
 #[derive(Clone)]
@@ -71,129 +108,13 @@ pub struct ImportSvgArgs {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct RectangleArgs {
+pub struct ListFontsArgs {
     /// Session handle returned by session_create.
     pub session: String,
-    /// Left edge in points.
-    pub x: f64,
-    /// Top edge in points.
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    /// Corner radius in points.
-    pub radius: Option<f64>,
-    /// Fill colour as "#rrggbb", or "none".
-    pub fill: Option<String>,
-    /// Stroke colour as "#rrggbb", or "none".
-    pub stroke: Option<String>,
-    /// Stroke weight in points.
-    pub stroke_width: Option<f64>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct EllipseArgs {
-    /// Session handle returned by session_create.
-    pub session: String,
-    /// Left edge of the bounding box in points.
-    pub x: f64,
-    /// Top edge of the bounding box in points.
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-    /// Fill colour as "#rrggbb", or "none".
-    pub fill: Option<String>,
-    /// Stroke colour as "#rrggbb", or "none".
-    pub stroke: Option<String>,
-    /// Stroke weight in points.
-    pub stroke_width: Option<f64>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PolygonArgs {
-    /// Session handle returned by session_create.
-    pub session: String,
-    /// Centre x in points.
-    pub cx: f64,
-    /// Centre y in points.
-    pub cy: f64,
-    /// Distance from the centre to each corner, in points.
-    pub radius: f64,
-    /// Number of sides (3-1000, default 6).
-    pub sides: Option<u32>,
-    /// Fill colour as "#rrggbb", or "none".
-    pub fill: Option<String>,
-    /// Stroke colour as "#rrggbb", or "none".
-    pub stroke: Option<String>,
-    /// Stroke weight in points.
-    pub stroke_width: Option<f64>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct StarArgs {
-    /// Session handle returned by session_create.
-    pub session: String,
-    /// Centre x in points.
-    pub cx: f64,
-    /// Centre y in points.
-    pub cy: f64,
-    /// Radius of the outer points, in points.
-    pub outer_radius: f64,
-    /// Radius of the inner corners, in points.
-    pub inner_radius: f64,
-    /// Number of points (default 5).
-    pub points: Option<u32>,
-    /// Fill colour as "#rrggbb", or "none".
-    pub fill: Option<String>,
-    /// Stroke colour as "#rrggbb", or "none".
-    pub stroke: Option<String>,
-    /// Stroke weight in points.
-    pub stroke_width: Option<f64>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct LineArgs {
-    /// Session handle returned by session_create.
-    pub session: String,
-    pub x1: f64,
-    pub y1: f64,
-    pub x2: f64,
-    pub y2: f64,
-    /// Stroke colour as "#rrggbb", or "none".
-    pub stroke: Option<String>,
-    /// Stroke weight in points.
-    pub stroke_width: Option<f64>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct SetPaintArgs {
-    /// Session handle returned by session_create.
-    pub session: String,
-    /// Ids of the objects to paint.
-    pub ids: Vec<u64>,
-    /// Fill colour as "#rrggbb", or "none".
-    pub fill: Option<String>,
-    /// Stroke colour as "#rrggbb", or "none".
-    pub stroke: Option<String>,
-    /// Stroke weight in points.
-    pub stroke_width: Option<f64>,
-}
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct MoveArgs {
-    /// Session handle returned by session_create.
-    pub session: String,
-    /// Ids of the objects to move.
-    pub ids: Vec<u64>,
-    /// Horizontal offset in points.
-    pub dx: f64,
-    /// Vertical offset in points (positive is down).
-    pub dy: f64,
+    /// Only families whose name contains this text (case-insensitive).
+    pub query: Option<String>,
+    /// A family name: list its styles instead of the families.
+    pub family: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
@@ -228,10 +149,14 @@ pub struct ExportArgs {
 
 impl ArtServer {
     pub fn new(sessions: Arc<Sessions>, call_timeout: Duration) -> Self {
+        let mut tool_router = Self::tool_router();
+        for tool in vectorcraft_tools() {
+            tool_router.add_route(ToolRoute::new_dyn(tool.clone(), call_vectorcraft_tool));
+        }
         Self {
             sessions,
             call_timeout,
-            tool_router: Self::tool_router(),
+            tool_router,
         }
     }
 
@@ -247,18 +172,7 @@ impl ArtServer {
         let owner = principal(parts)?;
         let host = self.sessions.get(handle, &owner).map_err(session_error)?;
         let token = CancelToken::new();
-        let outcome = tokio::select! {
-            r = host.run(steps, token.clone()) => r,
-            _ = ct.cancelled() => {
-                token.cancel();
-                Err(HostError::Cancelled)
-            }
-            _ = tokio::time::sleep(self.call_timeout) => {
-                token.cancel();
-                return Ok(Err(tool_error(format!("timed out after {} s; the operation was cancelled", self.call_timeout.as_secs_f64()))));
-            }
-        };
-        Ok(outcome.map_err(|e| tool_error(e.to_string())))
+        Ok(self.within_limits(host.run(steps, token.clone()), &token, ct).await)
     }
 
     /// 1ステップだけ実行し、その結果をそのまま構造化結果として返す。
@@ -269,14 +183,43 @@ impl ArtServer {
         })
     }
 
-    /// 図形を作るステップと、その図形に塗りと線を設定するステップを1回で実行する。
-    async fn draw(&self, parts: &Parts, handle: &str, create: Step, paint: PaintArgs, ct: &CancellationToken) -> Result<CallToolResult, ErrorData> {
-        let mut steps = vec![create];
-        steps.extend(paint.steps(json!(["$0.id"]), true));
-        Ok(match self.exec(parts, handle, steps, ct).await? {
-            Ok(results) => CallToolResult::structured(json!({"id": results.first().and_then(|r| r.get("id")).cloned().unwrap_or(Value::Null)})),
+    /// VectorCraft のツール `name` を作業セッション `handle` で実行する。
+    async fn run_vectorcraft_tool(
+        &self,
+        parts: &Parts,
+        handle: &str,
+        name: String,
+        args: Value,
+        ct: &CancellationToken,
+    ) -> Result<CallToolResult, ErrorData> {
+        let owner = principal(parts)?;
+        let host = self.sessions.get(handle, &owner).map_err(session_error)?;
+        let token = CancelToken::new();
+        Ok(match self.within_limits(host.run_tool(name, args, token.clone()), &token, ct).await {
+            Ok(result) => tool_result(result),
             Err(e) => e,
         })
+    }
+
+    /// 制限時間とクライアントのキャンセルを見ながら `run` を待つ。どちらかで打ち切るときは
+    /// `token` でエンジンに中断を求める。
+    async fn within_limits<T>(
+        &self,
+        run: impl Future<Output = Result<T, HostError>>,
+        token: &CancelToken,
+        ct: &CancellationToken,
+    ) -> Result<T, CallToolResult> {
+        tokio::select! {
+            r = run => r.map_err(|e| tool_error(e.to_string())),
+            _ = ct.cancelled() => {
+                token.cancel();
+                Err(tool_error(HostError::Cancelled.to_string()))
+            }
+            _ = tokio::time::sleep(self.call_timeout) => {
+                token.cancel();
+                Err(tool_error(format!("timed out after {} s; the operation was cancelled", self.call_timeout.as_secs_f64())))
+            }
+        }
     }
 }
 
@@ -328,130 +271,33 @@ impl ArtServer {
         self.exec_one(&parts, &a.session, Step::new("document.open", params), &ct).await
     }
 
-    #[tool(description = "Draw a rectangle in the active document. Returns the new object's id.")]
-    async fn draw_rectangle(
+    #[tool(
+        description = "List the font families this server can use (bundled, installed on the server and from its configured font \
+folders), or the styles of one family. Use these names for add_text and text styles; a family the server lacks is drawn with a fallback font."
+    )]
+    async fn list_fonts(
         &self,
-        Parameters(a): Parameters<RectangleArgs>,
+        Parameters(a): Parameters<ListFontsArgs>,
         Extension(parts): Extension<Parts>,
         ct: CancellationToken,
     ) -> Result<CallToolResult, ErrorData> {
-        let mut params = json!({"x": a.x, "y": a.y, "width": a.width, "height": a.height});
-        insert_opt(&mut params, "radius", a.radius.map(Value::from));
-        let paint = PaintArgs {
-            fill: a.fill,
-            stroke: a.stroke,
-            stroke_width: a.stroke_width,
+        let mut params = json!({});
+        insert_opt(&mut params, "family", a.family.map(Value::from));
+        let mut results = match self.exec(&parts, &a.session, vec![Step::new("text.fontList", params)], &ct).await? {
+            Ok(results) => results,
+            Err(e) => return Ok(e),
         };
-        self.draw(&parts, &a.session, Step::new("shape.rectangle", params), paint, &ct).await
-    }
-
-    #[tool(description = "Draw an ellipse in the active document, fitted to the given box. Returns the new object's id.")]
-    async fn draw_ellipse(
-        &self,
-        Parameters(a): Parameters<EllipseArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        let params = json!({"x": a.x, "y": a.y, "width": a.width, "height": a.height});
-        let paint = PaintArgs {
-            fill: a.fill,
-            stroke: a.stroke,
-            stroke_width: a.stroke_width,
-        };
-        self.draw(&parts, &a.session, Step::new("shape.ellipse", params), paint, &ct).await
-    }
-
-    #[tool(description = "Draw a regular polygon in the active document. Returns the new object's id.")]
-    async fn draw_polygon(
-        &self,
-        Parameters(a): Parameters<PolygonArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        let mut params = json!({"cx": a.cx, "cy": a.cy, "radius": a.radius});
-        insert_opt(&mut params, "sides", a.sides.map(Value::from));
-        let paint = PaintArgs {
-            fill: a.fill,
-            stroke: a.stroke,
-            stroke_width: a.stroke_width,
-        };
-        self.draw(&parts, &a.session, Step::new("shape.polygon", params), paint, &ct).await
-    }
-
-    #[tool(description = "Draw a star in the active document. Returns the new object's id.")]
-    async fn draw_star(
-        &self,
-        Parameters(a): Parameters<StarArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        let mut params = json!({"cx": a.cx, "cy": a.cy, "radius1": a.outer_radius, "radius2": a.inner_radius});
-        insert_opt(&mut params, "points", a.points.map(Value::from));
-        let paint = PaintArgs {
-            fill: a.fill,
-            stroke: a.stroke,
-            stroke_width: a.stroke_width,
-        };
-        self.draw(&parts, &a.session, Step::new("shape.star", params), paint, &ct).await
-    }
-
-    #[tool(description = "Draw a straight line segment in the active document. Returns the new object's id.")]
-    async fn draw_line(
-        &self,
-        Parameters(a): Parameters<LineArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        let params = json!({"x1": a.x1, "y1": a.y1, "x2": a.x2, "y2": a.y2});
-        let paint = PaintArgs {
-            fill: None,
-            stroke: a.stroke,
-            stroke_width: a.stroke_width,
-        };
-        self.draw(&parts, &a.session, Step::new("shape.line", params), paint, &ct).await
-    }
-
-    #[tool(description = "Set the fill, stroke colour and/or stroke weight of objects.")]
-    async fn set_paint(
-        &self,
-        Parameters(a): Parameters<SetPaintArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        let paint = PaintArgs {
-            fill: a.fill,
-            stroke: a.stroke,
-            stroke_width: a.stroke_width,
-        };
-        let steps = paint.steps(json!(a.ids), false);
-        if steps.is_empty() {
-            return Err(ErrorData::invalid_params("give at least one of fill, stroke or stroke_width", None));
+        let mut out = results.pop().unwrap_or(Value::Null);
+        if let Some(o) = out.as_object_mut()
+            && let Some(Value::Array(families)) = o.get_mut("families")
+        {
+            if let Some(q) = a.query.map(|q| q.to_lowercase()) {
+                families.retain(|f| f.as_str().is_some_and(|n| n.to_lowercase().contains(&q)));
+            }
+            let count = families.len();
+            o.insert("count".to_string(), Value::from(count));
         }
-        Ok(match self.exec(&parts, &a.session, steps, &ct).await? {
-            Ok(_) => CallToolResult::structured(json!({"ids": a.ids})),
-            Err(e) => e,
-        })
-    }
-
-    #[tool(description = "Move objects by an offset.")]
-    async fn move_objects(
-        &self,
-        Parameters(a): Parameters<MoveArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        let params = json!({"ids": a.ids, "dx": a.dx, "dy": a.dy});
-        self.exec_one(&parts, &a.session, Step::new("object.move", params), &ct).await
-    }
-
-    #[tool(description = "Describe the active document: its layer tree with object ids, kinds, bounds and paint, artboards, selection and history.")]
-    async fn inspect_document(
-        &self,
-        Parameters(a): Parameters<SessionArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.exec_one(&parts, &a.session, Step::new("document.inspect", json!({})), &ct).await
+        Ok(CallToolResult::structured(out))
     }
 
     #[tool(description = "Export the active document as SVG (returned as text), PNG (returned as an image) or PDF (returned as base64).")]
@@ -486,26 +332,6 @@ impl ArtServer {
         };
         Ok(export_result(a.format, results.pop().unwrap_or(Value::Null)))
     }
-
-    #[tool(description = "Undo the last change in the active document.")]
-    async fn undo(
-        &self,
-        Parameters(a): Parameters<SessionArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.exec_one(&parts, &a.session, Step::new("edit.undo", json!({})), &ct).await
-    }
-
-    #[tool(description = "Redo the last undone change in the active document.")]
-    async fn redo(
-        &self,
-        Parameters(a): Parameters<SessionArgs>,
-        Extension(parts): Extension<Parts>,
-        ct: CancellationToken,
-    ) -> Result<CallToolResult, ErrorData> {
-        self.exec_one(&parts, &a.session, Step::new("edit.redo", json!({})), &ct).await
-    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -517,42 +343,65 @@ impl ServerHandler for ArtServer {
     }
 }
 
-/// 塗りと線の指定。
-struct PaintArgs {
-    fill: Option<String>,
-    stroke: Option<String>,
-    stroke_width: Option<f64>,
+/// 公開する VectorCraft のツールの定義。どれにも作業セッションのハンドル `session` を必須の
+/// 引数として足す。
+fn vectorcraft_tools() -> &'static [Tool] {
+    static TOOLS: OnceLock<Vec<Tool>> = OnceLock::new();
+    TOOLS.get_or_init(|| {
+        vectorcraft_mcp::tool_definitions()
+            .into_iter()
+            .filter(|d| d.get("name").and_then(Value::as_str).is_some_and(|n| VECTORCRAFT_TOOLS.contains(&n)))
+            .filter_map(|mut d| {
+                add_session_argument(&mut d);
+                serde_json::from_value::<Tool>(d)
+                    .inspect_err(|e| tracing::error!("cannot publish a VectorCraft tool: {e}"))
+                    .ok()
+            })
+            .collect()
+    })
 }
 
-impl PaintArgs {
-    /// `targets`（id の配列、または `["$0.id"]` のような参照）に塗りと線を設定するステップ。
-    fn steps(self, targets: Value, referring: bool) -> Vec<Step> {
-        let step = |command, params| {
-            if referring {
-                Step::referring(command, params)
-            } else {
-                Step::new(command, params)
-            }
-        };
-        let mut steps = Vec::new();
-        if let Some(fill) = self.fill {
-            steps.push(step("paint.setFill", paint_params(&fill, &targets)));
-        }
-        if let Some(stroke) = self.stroke {
-            steps.push(step("paint.setStroke", paint_params(&stroke, &targets)));
-        }
-        if let Some(weight) = self.stroke_width {
-            steps.push(step("stroke.set", json!({"weight": weight, "ids": targets})));
-        }
-        steps
+fn add_session_argument(def: &mut Value) {
+    let Some(schema) = def.get_mut("inputSchema").and_then(Value::as_object_mut) else {
+        return;
+    };
+    if let Some(props) = schema.entry("properties").or_insert_with(|| json!({})).as_object_mut() {
+        props.insert("session".to_string(), json!({"type": "string", "description": SESSION_DESCRIPTION}));
+    }
+    if let Some(required) = schema.entry("required").or_insert_with(|| json!([])).as_array_mut() {
+        required.insert(0, json!("session"));
     }
 }
 
-fn paint_params(colour: &str, targets: &Value) -> Value {
-    if colour.eq_ignore_ascii_case("none") {
-        json!({"none": true, "ids": targets})
-    } else {
-        json!({"color": colour, "ids": targets})
+/// VectorCraft のツールの呼び出し口。`session` を取り出し、残りの引数をそのままツールに渡す。
+fn call_vectorcraft_tool(ctx: ToolCallContext<'_, ArtServer>) -> ToolFuture<'_> {
+    Box::pin(async move {
+        let mut args = ctx.arguments.unwrap_or_default();
+        let session = match args.remove("session") {
+            Some(Value::String(s)) => s,
+            _ => return Err(ErrorData::invalid_params("missing string argument `session`", None)),
+        };
+        let parts = ctx
+            .request_context
+            .extensions
+            .get::<Parts>()
+            .ok_or_else(|| ErrorData::internal_error("request was not authenticated", None))?;
+        let result = ctx
+            .service
+            .run_vectorcraft_tool(parts, &session, ctx.name.into_owned(), Value::Object(args), &ctx.request_context.ct)
+            .await?;
+        Ok(result.into())
+    })
+}
+
+/// VectorCraft のツールの結果を MCP の結果にする。structuredContent は付けない（Claude Code などは
+/// それがあると本文を見せないため。export_result と同じ考え方）。
+fn tool_result(r: ToolResult) -> CallToolResult {
+    let content: Result<Vec<ContentBlock>, _> = r.content.into_iter().map(serde_json::from_value).collect();
+    match content {
+        Ok(content) if r.is_error => CallToolResult::error(content),
+        Ok(content) => CallToolResult::success(content),
+        Err(e) => tool_error(format!("the tool returned content this server cannot pass on: {e}")),
     }
 }
 
@@ -654,5 +503,40 @@ mod tests {
         assert_eq!(r.content.len(), 2);
         let w: Value = serde_json::from_str(&r.content[1].as_text().unwrap().text).unwrap();
         assert_eq!(w, json!({"warnings": ["missing font: Foo"]}));
+    }
+
+    #[test]
+    fn every_chosen_vectorcraft_tool_is_published_with_a_session_argument() {
+        let tools = vectorcraft_tools();
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert_eq!(names.len(), VECTORCRAFT_TOOLS.len(), "{names:?}");
+        for name in VECTORCRAFT_TOOLS {
+            assert!(names.contains(name), "{name} is missing");
+        }
+        for tool in tools {
+            let required = tool.input_schema.get("required").and_then(Value::as_array).cloned().unwrap_or_default();
+            assert!(required.contains(&json!("session")), "{}", tool.name);
+            assert!(tool.input_schema["properties"].get("session").is_some(), "{}", tool.name);
+            // ブランドの方針: ツールの説明で VectorCraft を名乗らない（docs/design-policy.md 9章）
+            let description = tool.description.as_deref().unwrap_or_default();
+            assert!(!description.contains("VectorCraft"), "{}: {description}", tool.name);
+        }
+    }
+
+    #[test]
+    fn vectorcraft_results_keep_their_content_and_error_flag() {
+        let ok = tool_result(ToolResult::text("done"));
+        assert_eq!(ok.is_error, Some(false));
+        assert!(ok.structured_content.is_none());
+        assert_eq!(ok.content[0].as_text().unwrap().text, "done");
+
+        let err = tool_result(ToolResult::error("nope"));
+        assert_eq!(err.is_error, Some(true));
+
+        let image = tool_result(ToolResult {
+            content: vec![json!({"type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png"})],
+            is_error: false,
+        });
+        assert!(image.content[0].as_image().is_some());
     }
 }

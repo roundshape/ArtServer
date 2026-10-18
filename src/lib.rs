@@ -2,6 +2,7 @@
 //! GUI なしのベクターグラフィックスサーバー。構成は docs/design-policy.md 4章を参照。
 
 pub mod auth;
+mod backend;
 pub mod config;
 pub mod engine_host;
 pub mod policy;
@@ -84,9 +85,11 @@ impl App {
     }
 }
 
-/// プロセス全体の準備。エンジンの描画スレッド数を抑え、フォントの走査を先に始める。
+/// プロセス全体の準備。エンジンの描画スレッド数を抑え、指定されたフォントのフォルダを加えて、
+/// フォントの走査を先に始める（フォルダは最初の走査より前に加える必要がある）。
 pub fn prepare_engine(config: &Config) {
     vectorcraft_render::set_default_threads(Some(config.limits.render_threads));
+    vectorcraft_text::set_user_font_dirs(config.font_dirs.clone());
     vectorcraft_text::FontDb::global().scan_in_background();
 }
 

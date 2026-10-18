@@ -171,7 +171,48 @@ Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux �
 - 長すぎる場合は `cargo check` に替える案がある（リンクまでは確かめられない）
 - GitHub の案内: `ubuntu-latest` は 2026-10-19 から順に Ubuntu 26 に切り替わる
 
+## 2026-10-18 VectorCraft のツールの組み込み（文字とフォント）
+
+### 方針
+
+設計方針 1.1節（想定する利用形態）、4.6節（大きいデータの受け渡し）、4.7節（ツールの構成）をユーザーと決めた。4.7節は、VectorCraft の MCP のツールの部分（`call_tool` と trait `Backend`）を、ArtServer が実装する GuardedBackend 越しに使う方式。
+
+### やったこと
+
+- `vectorcraft-mcp` を同じ commit で依存に追加した（ツールの部分だけを使う）。新しい外部ライブラリは増えていない。
+- `src/backend.rs`（GuardedBackend）を追加した。`engine.execute` は許可リスト・パス・引数・文書数を検査してから実行、`engine.commands` は許可リストのコマンドだけ、`ui.render` はエンジンの PNG 書き出しで描画、それ以外（`ui.*`、`app.*` など）は断る。
+- `src/engine_host.rs`: 作業セッションのスレッドで、VectorCraft のツールを今のファイル制限・キャンセル・制限時間の中で動かせるようにした。コマンドの検査と実行を `execute_checked` にまとめた。
+- `src/policy.rs`: 許可リストを約75個に広げた。`file.new`・`document.open`・`document.export` は ArtServer のツールからだけ使える。パスの検査は値の型も見る（文字列は断り、図形の id は通す）。プラグインの効果は断る。
+- `src/tools.rs`: VectorCraft のツール16個を、作業セッションの `session` 引数を足して公開した。ArtServer のツールは6個（作業セッション、`document_new`、`import_svg`、`export_document`、新しい `list_fonts`）。重なる10個（`draw_rectangle` などの図形5つ、`set_paint`、`move_objects`、`inspect_document`、`undo`、`redo`）はやめた。サーバーの説明も更新した。
+- 起動時の設定 `--font-dirs`（`ARTSERVER_FONT_DIRS`）を追加した。OS のフォントに加えて、指定したフォルダのフォントを使う。
+- `about.toml` に `vectorcraft-mcp` を足し、`THIRD_PARTY_NOTICES.md` を生成し直した。README のツールと設定の表を更新した。
+
+### 実行したコマンドと結果
+
+| コマンド | 結果 |
+|---|---|
+| `cargo build --all-targets --offline --locked` | 成功 |
+| `cargo test --offline --locked` | 43件すべて成功（単体30件、E2E 13件） |
+| `cargo clippy --all-targets` | 警告なし |
+| `cargo fmt --check` | 差分なし |
+| `cargo deny check` | advisories ok、bans ok、licenses ok、sources ok（yanked の警告1件は従来どおり） |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功（`vectorcraft-mcp` が VectorCraft の MIT の欄に加わった） |
+
+主な新しいテスト: VectorCraft のツールが GuardedBackend の上で動くこと（日本語の文字、図形、変形、プレビュー）、許可していないコマンドがどのツールからも断られること、`ui.*`・`app.*` が断られること、`command_list` が許可リストのコマンドだけを返すこと、許可リストの全 id がエンジンに存在すること、開放しない分類が許可リストに入っていないこと、公開するツールの一覧がちょうど22個であること、フォントの一覧と絞り込み。
+
+### 気づいたこと
+
+- `--offline` で `Cargo.lock` を更新させると、関係のない箇所（Windows 用の `windows-sys` の参照）まで古いバージョンに寄せられた。元の `Cargo.lock` に `vectorcraft-mcp` の分だけを差し込み、`--locked` で通ることを確かめた。
+
+### 未確認
+
+- Claude Code から、新しいツールを使った確認（ArtServer の再起動が必要）
+- 日本語の文字が、ヒラギノなど実際の日本語フォントで描かれているか（テストは文字の配置と書き出しだけを確かめている）
+- エンジンを動かしてのコマンド数の確認（約760は静的に数えた値）
+
 ### 次の作業
 
-1. yoke-derive を上げるかどうかの判断（上げる場合は再ビルドとテスト）
-2. Phase 2: 日本語フォントの方針決定、ツールの拡充（テキスト、レイヤー、グループ、画像など）、PDF など大きい出力の受け渡し方（ファイル出力など）
+1. Claude Code での確認（新しいツール、日本語の文字、`command_run`）
+2. 大きいデータの受け渡し（設計方針 4.6節）
+3. Windows のビルドの確認（手動で実行する GitHub Actions）
+4. VectorCraft の更新への追従と、yoke-derive の更新

@@ -12,6 +12,8 @@ publish = false
 vectorcraft-engine = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
 vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
 vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
+# VectorCraft の MCP のツールの部分だけを使う（call_tool と Backend。docs/design-policy.md 4.7節）
+vectorcraft-mcp = { git = "https://github.com/storytold/vectorcraft", rev = "fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c" }
 
 # MCP（公式 Rust SDK）。マイナー間でトランスポートが変わることがあるためマイナーまで固定する
 rmcp = { version = "~3.5", features = ["server", "macros", "transport-streamable-http-server"] }

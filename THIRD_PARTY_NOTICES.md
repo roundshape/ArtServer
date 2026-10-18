@@ -261,7 +261,7 @@ crates that use it.
 
 | License | Crates |
 |---|---|
-| MIT License | 258 |
+| MIT License | 259 |
 | Unicode License v3 | 19 |
 | Apache License 2.0 | 7 |
 | BSD 3-Clause "New" or "Revised" License | 7 |
@@ -4049,6 +4049,7 @@ Used by:
 - vectorcraft-eps 0.12.0
 - vectorcraft-format 0.12.0
 - vectorcraft-geom 0.12.0
+- vectorcraft-mcp 0.12.0
 - vectorcraft-metafile 0.12.0
 - vectorcraft-pathops 0.12.0
 - vectorcraft-pdf 0.12.0

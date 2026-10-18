@@ -25,6 +25,7 @@ async fn start(limits: Limits) -> String {
         token: TOKEN.into(),
         allowed_hosts: vec!["127.0.0.1".into(), "localhost".into()],
         allowed_origins: vec![],
+        font_dirs: vec![],
         limits,
     };
     tokio::spawn(artserver::serve(config, listener, std::future::pending()));
@@ -53,6 +54,38 @@ fn ok(result: &CallToolResult) -> &Value {
     result.structured_content.as_ref().unwrap()
 }
 
+/// VectorCraft のツールの結果（JSON のテキスト）を読む。
+fn json_of(result: &CallToolResult) -> Value {
+    succeeded(result);
+    serde_json::from_str(&text_of(result)).unwrap_or_else(|e| panic!("not JSON ({e}): {}", text_of(result)))
+}
+
+/// 公開しているツール（docs/design-policy.md 4.7節）。
+const TOOLS: &[&str] = &[
+    "session_create",
+    "session_close",
+    "document_new",
+    "import_svg",
+    "list_fonts",
+    "export_document",
+    "draw_shape",
+    "draw_path",
+    "set_paint",
+    "transform",
+    "add_text",
+    "pathfinder",
+    "apply_effect",
+    "create_graph",
+    "text_wrap",
+    "render_preview",
+    "doc_inspect",
+    "undo",
+    "redo",
+    "command_list",
+    "command_run",
+    "command_batch",
+];
+
 fn text_of(result: &CallToolResult) -> String {
     result
         .content
@@ -68,9 +101,11 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     let client = client(&base, TOKEN).await;
 
     let tools = client.list_all_tools().await.unwrap();
-    for name in ["session_create", "document_new", "draw_rectangle", "export_document"] {
-        assert!(tools.iter().any(|t| t.name == name), "missing tool {name}");
-    }
+    let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+    names.sort_unstable();
+    let mut expected = TOOLS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(names, expected);
 
     let session = ok(&call(&client, "session_create", json!({})).await)["session"]
         .as_str()
@@ -79,14 +114,14 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     ok(&call(&client, "document_new", json!({"session": session, "width": 300, "height": 200})).await);
     let rect = call(
         &client,
-        "draw_rectangle",
-        json!({"session": session, "x": 20, "y": 30, "width": 100, "height": 50, "fill": "#3366ff", "stroke": "#000000", "stroke_width": 2}),
+        "draw_shape",
+        json!({"session": session, "shape": "rectangle", "x": 20, "y": 30, "width": 100, "height": 50, "fill": "#3366ff", "stroke": "#000000", "strokeWidth": 2}),
     )
     .await;
-    let id = ok(&rect)["id"].as_u64().unwrap();
+    let id = json_of(&rect)["id"].as_u64().unwrap();
 
-    let moved = call(&client, "move_objects", json!({"session": session, "ids": [id], "dx": 10, "dy": 0})).await;
-    ok(&moved);
+    let moved = call(&client, "transform", json!({"session": session, "ids": [id], "dx": 10})).await;
+    succeeded(&moved);
 
     // SVG と PNG に structuredContent が付くと、Claude Code は本文を表示しない
     let svg = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
@@ -105,7 +140,7 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     assert!(png.content.iter().any(|c| c.as_image().is_some()), "no image content");
 
     let undone = call(&client, "undo", json!({"session": session})).await;
-    ok(&undone);
+    succeeded(&undone);
 
     ok(&call(&client, "session_close", json!({"session": session})).await);
     let _ = client.cancel().await;
@@ -124,6 +159,104 @@ async fn svg_markup_can_be_imported_and_exported_again() {
     let out = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
     succeeded(&out);
     assert!(text_of(&out).to_ascii_lowercase().contains("#00aa00") || text_of(&out).to_ascii_lowercase().contains("#0a0"));
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn japanese_text_is_placed_edited_and_exported() {
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": session, "width": 300, "height": 200})).await);
+
+    let text = call(
+        &client,
+        "add_text",
+        json!({"session": session, "text": "こんにちは", "x": 20, "y": 60, "size": 32, "color": "#cc0000"}),
+    )
+    .await;
+    let id = json_of(&text)["id"].as_u64().unwrap();
+
+    // 文字の差し替えは許可リストのコマンドを command_run で使う
+    let changed = call(
+        &client,
+        "command_run",
+        json!({"session": session, "id": "text.setText", "params": {"ids": [id], "text": "こんばんは"}}),
+    )
+    .await;
+    succeeded(&changed);
+
+    let svg = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
+    succeeded(&svg);
+    assert!(text_of(&svg).contains("こんばんは"), "{}", text_of(&svg));
+
+    let preview = call(&client, "render_preview", json!({"session": session, "max_side": 300})).await;
+    succeeded(&preview);
+    assert!(preview.content.iter().any(|c| c.as_image().is_some()), "no preview image");
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn fonts_can_be_listed_and_filtered() {
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // 同梱フォントの Inter は、どの環境にもある
+    let fonts = call(&client, "list_fonts", json!({"session": session, "query": "inter"})).await;
+    let families = ok(&fonts)["families"].as_array().unwrap().clone();
+    assert!(families.iter().any(|f| f == "Inter"), "{families:?}");
+    assert!(
+        families.iter().all(|f| f.as_str().unwrap().to_lowercase().contains("inter")),
+        "{families:?}"
+    );
+    let styles = call(&client, "list_fonts", json!({"session": session, "family": "Inter"})).await;
+    assert!(!ok(&styles)["styles"].as_array().unwrap().is_empty());
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn command_tools_reach_only_allowed_commands() {
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": session})).await);
+    for (id, params) in [
+        ("prefs.set", json!({"key": "units", "value": "mm"})),
+        ("document.export", json!({"format": "svg"})),
+        ("text.addFontFiles", json!({"files": ["/tmp/x.ttf"]})),
+    ] {
+        let r = call(&client, "command_run", json!({"session": session, "id": id, "params": params})).await;
+        assert_eq!(r.is_error, Some(true), "{id}: {r:?}");
+        assert!(text_of(&r).contains("not allowed"), "{id}: {}", text_of(&r));
+    }
+    let list = call(&client, "command_list", json!({"session": session, "filter": "text."})).await;
+    let ids: Vec<String> = json_of(&list)
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(ids.iter().any(|id| id == "text.setStyle"), "{ids:?}");
+    assert!(!ids.iter().any(|id| id == "text.addFontFiles"), "{ids:?}");
+
+    // VectorCraft のツールでも、知らない作業セッションは断られる
+    let args = json!({"session": "0000", "shape": "rectangle", "x": 0, "y": 0, "width": 1, "height": 1});
+    let Value::Object(args) = args else { unreachable!() };
+    assert!(
+        client
+            .call_tool(CallToolRequestParams::new("draw_shape").with_arguments(args))
+            .await
+            .is_err()
+    );
     let _ = client.cancel().await;
 }
 
@@ -163,8 +296,8 @@ async fn drawing_without_a_document_reports_a_tool_error() {
         .to_string();
     let r = call(
         &client,
-        "draw_rectangle",
-        json!({"session": session, "x": 0, "y": 0, "width": 1, "height": 1}),
+        "draw_shape",
+        json!({"session": session, "shape": "rectangle", "x": 0, "y": 0, "width": 1, "height": 1}),
     )
     .await;
     assert_eq!(r.is_error, Some(true), "{r:?}");
@@ -185,12 +318,14 @@ async fn a_call_over_the_time_limit_is_cancelled() {
         .to_string();
     ok(&call(&client, "document_new", json!({"session": session})).await);
     for i in 0..20 {
-        ok(&call(
-            &client,
-            "draw_ellipse",
-            json!({"session": session, "x": i * 10, "y": i * 10, "width": 300, "height": 300, "fill": "#ff8800"}),
-        )
-        .await);
+        succeeded(
+            &call(
+                &client,
+                "draw_shape",
+                json!({"session": session, "shape": "ellipse", "x": i * 10, "y": i * 10, "width": 300, "height": 300, "fill": "#ff8800"}),
+            )
+            .await,
+        );
     }
     let r = call(&client, "export_document", json!({"session": session, "format": "png", "scale": 8})).await;
     assert_eq!(r.is_error, Some(true), "{r:?}");

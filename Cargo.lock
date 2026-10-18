@@ -137,6 +137,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vectorcraft-engine",
+ "vectorcraft-mcp",
  "vectorcraft-render",
  "vectorcraft-text",
 ]
@@ -3370,6 +3371,23 @@ dependencies = [
  "kurbo",
  "serde",
  "thiserror",
+]
+
+[[package]]
+name = "vectorcraft-mcp"
+version = "0.12.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c#fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c"
+dependencies = [
+ "image",
+ "log",
+ "serde_json",
+ "vectorcraft-doc",
+ "vectorcraft-engine",
+ "vectorcraft-format",
+ "vectorcraft-geom",
+ "vectorcraft-render",
+ "vectorcraft-svg",
+ "vectorcraft-tools",
 ]
 
 [[package]]
