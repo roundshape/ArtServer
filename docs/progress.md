@@ -242,6 +242,7 @@ Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux �
 
 - ArtServer を修正後のバイナリで起動し直し、サンプルを書き出し直した。`sample.svg` では、ヒラギノ角ゴ W6 と明朝 W6 の文字に `font-weight="600"` が付いた（丸ゴ W4 は標準の太さなので付かない）。
 - ユーザーが Illustrator で開き、角ゴと明朝が W6 の太さで表示されることを確認した。PostScript 名を書く追加の修正は不要だった。
+- 本家 VectorCraft に Issue で報告した: [storytold/vectorcraft#2873](https://github.com/storytold/vectorcraft/issues/2873)。重複する報告はなく、本家の `main`（`73f40e3`）でも未修正だった。文面はユーザーが確認し、投稿をユーザーの許可のもとで行った。
 
 ### 未確認
 
@@ -250,7 +251,6 @@ Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux �
 ### 次の作業
 
 1. Claude Code での確認（新しいツール、日本語の文字、`command_run`）
-2. 本家 VectorCraft への修正の提案（文面は用意し、送るのはユーザー）
-3. 大きいデータの受け渡し（設計方針 4.6節。置き場所はメモリかディスクかを決める）
-4. Windows のビルドの確認（手動で実行する GitHub Actions）
-5. VectorCraft の更新への追従と、yoke-derive の更新
+2. 大きいデータの受け渡し（設計方針 4.6節。置き場所はメモリかディスクかを決める）
+3. Windows のビルドの確認（手動で実行する GitHub Actions）
+4. VectorCraft の更新への追従と、yoke-derive の更新。#2873 の対応状況も確かめる

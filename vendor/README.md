@@ -20,8 +20,11 @@ VectorCraft の不具合を、該当する crate だけをここに置いて直�
   埋め込みフォントの `@font-face` の太さも同じ関数を使うので、そろって直る。
 - **影響の範囲**: SVG の書き出し（と CSS の書き出し）だけ。フォントを選ぶ処理（`vectorcraft-text`）は変えていない。
 - **確認**: 修正後の SVG を Illustrator で開き、ヒラギノ角ゴ W6・明朝 W6 が W6 の太さで表示されることを確かめた（2026-10-18）。
-- **本家への提案**: 未提出。本来は `vectorcraft-text` の `style_weight` で W0〜W9 を読むのが根本の直し方
-  （フォントを選ぶ処理にも効く）。取り込まれたら、この差し替えを外す。
+- **本家への報告**: [storytold/vectorcraft#2873](https://github.com/storytold/vectorcraft/issues/2873)（2026-10-18）。
+  根本の直し方として、`vectorcraft-text` の `style_weight` で W0〜W9 を読む案を添えた（フォントを選ぶ処理にも効く）。
+  本家で直ったら、この差し替えを外す。
+- **本家の変化**: 本家の `main`（`73f40e3`）では `font_descriptor` が可変フォントの `wght` 軸を先に見るように
+  変わっている。VectorCraft を更新するときは、差分がそのままは当たらないので、内容を読んで載せ直す。
 
 ## コピーの作り方
 
