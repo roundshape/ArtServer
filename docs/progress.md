@@ -382,9 +382,18 @@ ArtServer を起動し直し、Claude Code から PDF を書き出して返っ�
 | Linux（push で自動、run 39123583009） | 成功。警告・エラーなし。全体 約12分半、うちビルド 10分45秒 |
 | Windows（手動、run 39123684572） | 成功。警告・エラーなし。全体 約33分、うちビルド 28分33秒（VectorCraft の crate をすべてビルドし直したため、キャッシュがあっても長い） |
 
-### 未確認
+### Claude Code からの動作の確認
 
-- Claude Code からの動作の確認（ArtServer の再起動が必要）
+ArtServer を v0.13.1 のバイナリで起動し直し、Claude Code から確かめた。すべて今までどおり動いた。
+
+| 確かめたこと | 結果 |
+|---|---|
+| `list_fonts`、`draw_shape`（星）、`transform`（移動と回転）、`add_text`（角ゴ・明朝） | 動いた |
+| `command_run`（`text.setStyle` で W6、`text.setText`、`text.fonts`） | 動いた。2つのフォントとも exact |
+| `command_run` で許可していないコマンド（`prefs.set`） | 断られた |
+| `render_preview` | プレビュー画像が表示された |
+| `export_document`（SVG） | 本文が返り、角ゴ・明朝の文字に `font-weight="600"` が付いていた（`vendor/` の修正が v0.13.1 でも効いている）。v0.13.1 から、文字が `<tspan>` で書かれるようになった |
+| `export_document`（PDF） | URL が返り、トークンなしで取れた。ヒラギノ角ゴ W6・明朝 W6 が埋め込まれていた |
 
 ### 次の作業
 
