@@ -1,0 +1,28 @@
+# Linux でビルドが通ることを確かめる。テストは実行しない（docs/progress.md 2026-10-18）
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同じブランチで新しい push があったら、古い実行は止める
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Rust を用意する
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      # 依存のビルド結果を次回に持ち越して、実行時間を短くする
+      - uses: Swatinem/rust-cache@v2
+      - name: ビルド
+        run: cargo build --locked
