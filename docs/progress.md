@@ -754,3 +754,38 @@ The project owner wants as many commands open as possible, in batches: second, t
 |---|---|
 | `cargo test --offline --locked` | All 71 passed (51 unit, 20 E2E). The first run failed in the new E2E test because there were no saved presets to export (an error in the test); saving one first fixed it |
 | `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+## 2026-10-19 Opening the third batch: the unclassified namespaces
+
+### Policy
+
+The 47 commands of the namespaces design policy section 4.7 didn't classify (`color`, `document`, `eyedropper`, `image`, `importMatches`, `magicWand`, `node`, `shaper`, `slice`) were read in full; 2 of them (`document.inspect`, `document.node`) were already open. The project owner agreed to open 23 and leave 22 closed:
+
+| Left closed | Why |
+|---|---|
+| The exports and saves (15): `document.exportPdf`, `exportEps`, `exportDxf`, `exportForOffice`, `exportForScreens`, `exportForWeb` (and its preview), `exportSelection`, `document.save`, `document.serialize`, the export presets and settings, `document.pdfSettings` | Exports belong to `export_document` (section 4.7); without a path these return the file as Base64 in the reply, which floods the AI's conversation |
+| `document.pdfInfo`, `document.dxfInfo` | They read a file given as data in the arguments; files come in through uploads |
+| `document.formats` | It lists formats this server doesn't accept |
+| `document.json` | The whole document model, which embedded images can make very large; `document.inspect` and `document.node` cover it |
+| `importMatches.*` (3) | For importing other apps' shortcut sets, which stay closed |
+
+Opened: `color.convert`, `gamutCheck`, `harmony`, `plates`; `document.activate` (a working session can now switch between its documents), `document.find`, `document.info` (its fontDetails list each font's file on the server, accepted for users within one organization), `document.setup`, `setUnits`, the ruler origin commands, `rasterEffectsSettings`; `eyedropper.setOptions`, `magicWand.options`/`set`; `image.info`, `node.move`, `shaper.*` (4), `slice.list`.
+
+### What was done
+
+- `src/policy.rs`: the 23 commands, with the reasons for what stays closed; the allowlist has 575.
+- Tests: the 22 closed ones are refused (unit). A new E2E test opens two documents and switches back to the first with `document.activate` (`doc_inspect` then shows its 300 pt artboard), converts a colour to CMYK, sets the bleed, finds a rectangle, sets the Magic Wand, moves a row with `node.move`, lists slices, and checks that five of the closed ones answer "not allowed".
+- Design policy section 4.7 and chapter 11.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 72 passed (51 unit, 21 E2E). The first run failed at `node.move`, which the test called without `parent` (that means the top level, where only layers can go); passing the layer fixed it |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+### Next steps
+
+1. The fourth batch: the 48 "decided individually later" commands
+2. Add to `export_document` what the closed exports offer (PDF/X and other PDF options, printer's marks, bleed, exporting the selection, EPS, DXF), and `document.pdfInfo` as a tool that takes an upload
+3. Check from Claude Code in a new conversation

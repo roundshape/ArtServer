@@ -618,6 +618,36 @@ const SHARED: &[&str] = &[
     "variable.makeVisibilityDynamic",
     "variable.rename",
     "variable.unbind",
+    // Third batch (2026-10-19): the namespaces section 4.7 didn't classify, but their exports, files given as data,
+    // the format list, the whole document model and the import matches of other apps' shortcut sets
+    // (docs/design-policy.md section 4.7)
+    // color: computations and checks
+    "color.convert",
+    "color.gamutCheck",
+    "color.harmony",
+    "color.plates",
+    // document: the active document, searching, information and setup
+    "document.activate",
+    "document.find",
+    "document.info",
+    "document.rasterEffectsSettings",
+    "document.resetRulerOrigin",
+    "document.rulerOrigin",
+    "document.setRulerOrigin",
+    "document.setUnits",
+    "document.setup",
+    // the settings select.magicWand and appearance.copyFrom use
+    "eyedropper.setOptions",
+    "magicWand.options",
+    "magicWand.set",
+    // images, rows of the Layers panel, Shaper groups and slices
+    "image.info",
+    "node.move",
+    "shaper.expand",
+    "shaper.release",
+    "shaper.scribble",
+    "shaper.select",
+    "slice.list",
 ];
 
 /// Formats allowed for export.
@@ -727,6 +757,30 @@ mod tests {
             "perspective.grid.lock",
             "perspective.grid.lockStation",
             "object.intertwine.edit",
+            // Closed in the third batch: exports (left to export_document), files given as data, the format list,
+            // the whole document model, and the import matches of other apps' shortcut sets
+            "document.exportPdf",
+            "document.exportEps",
+            "document.exportDxf",
+            "document.exportForOffice",
+            "document.exportForScreens",
+            "document.exportForWeb",
+            "document.exportForWeb.preview",
+            "document.exportSelection",
+            "document.exportPresets.list",
+            "document.exportPresets.save",
+            "document.exportPresets.delete",
+            "document.exportSettings",
+            "document.pdfSettings",
+            "document.save",
+            "document.serialize",
+            "document.pdfInfo",
+            "document.dxfInfo",
+            "document.formats",
+            "document.json",
+            "importMatches.list",
+            "importMatches.set",
+            "importMatches.reset",
         ] {
             for caller in BOTH {
                 assert!(check(id, &json!({}), caller).is_err(), "{id} should be refused");

@@ -413,6 +413,64 @@ async fn the_second_batch_of_document_commands_works_through_command_run() {
 }
 
 #[tokio::test]
+async fn the_third_batch_of_document_commands_works_through_command_run() {
+    // Commands of the namespaces section 4.7 didn't classify (docs/design-policy.md), run as the AI runs them
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(
+        &client,
+        "document_new",
+        json!({"session": session, "width": 300, "height": 200, "name": "first"}),
+    )
+    .await);
+    ok(&call(
+        &client,
+        "document_new",
+        json!({"session": session, "width": 500, "height": 400, "name": "second"}),
+    )
+    .await);
+    let run = |id: &'static str, params: Value| {
+        let args = json!({"session": session, "id": id, "params": params});
+        let client = &client;
+        async move { call(client, "command_run", args).await }
+    };
+
+    // A working session can switch between its documents
+    succeeded(&run("document.activate", json!({"index": 0})).await);
+    let inspected = json_of(&call(&client, "doc_inspect", json!({"session": session})).await);
+    assert_eq!(inspected["artboards"][0]["width"].as_f64(), Some(300.0), "{inspected}");
+
+    let converted = json_of(&run("color.convert", json!({"color": "#ff0000", "to": "cmyk"})).await);
+    assert!(converted.get("values").is_some(), "{converted}");
+    succeeded(&run("document.setup", json!({"bleed": 9})).await);
+    let shape = json!({"session": session, "shape": "rectangle", "x": 20, "y": 20, "width": 60, "height": 40, "fill": "#3366ff"});
+    let id = json_of(&call(&client, "draw_shape", shape).await)["id"].as_u64().unwrap();
+    let found = json_of(&run("document.find", json!({"kind": "Rectangle"})).await);
+    assert!(found["total"].as_u64().unwrap() >= 1, "{found}");
+    succeeded(&run("magicWand.set", json!({"fillTolerance": 10})).await);
+    let layer = inspected["layers"][0]["id"].as_u64().unwrap();
+    succeeded(&run("node.move", json!({"id": id, "parent": layer, "index": 0})).await);
+    succeeded(&run("slice.list", json!({})).await);
+
+    // What the third batch left closed stays refused
+    for id in [
+        "document.exportPdf",
+        "document.json",
+        "document.formats",
+        "document.pdfInfo",
+        "importMatches.list",
+    ] {
+        let r = run(id, json!({})).await;
+        assert!(text_of(&r).contains("not allowed"), "{id}: {}", text_of(&r));
+    }
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
 async fn unknown_sessions_and_unknown_arguments_are_refused() {
     let base = start(Limits::default()).await;
     let client = client(&base, TOKEN).await;
