@@ -328,18 +328,87 @@ async fn the_first_batch_of_document_commands_works_through_command_run() {
     succeeded(&run("guide.list", json!({})).await);
     succeeded(&run("graphicStyle.list", json!({})).await);
 
-    // What the first batch left out stays refused
-    for id in [
-        "artboard.copy",
-        "graphicStyle.libraries",
-        "transparency.viewOpacityMask",
-        "perspective.presets.export",
-    ] {
+    // What the first batch left out, and the second batch too, stays refused
+    for id in ["graphicStyle.libraries", "transparency.viewOpacityMask"] {
         let r = run(id, json!({})).await;
         assert!(text_of(&r).contains("not allowed"), "{id}: {}", text_of(&r));
     }
     let svg = text_of(&call(&client, "export_document", json!({"session": session, "format": "svg"})).await);
     assert!(svg.contains("<svg"), "{svg}");
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn the_second_batch_of_document_commands_works_through_command_run() {
+    // One command of each larger group opened in the second batch (docs/design-policy.md section 4.7)
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": session, "width": 400, "height": 300})).await);
+    let mut ids = Vec::new();
+    for (x, y) in [(20, 20), (120, 20), (220, 20), (20, 150)] {
+        let shape = json!({"session": session, "shape": "rectangle", "x": x, "y": y, "width": 60, "height": 40, "fill": "#3366ff"});
+        ids.push(json_of(&call(&client, "draw_shape", shape).await)["id"].as_u64().unwrap());
+    }
+    succeeded(
+        &call(
+            &client,
+            "add_text",
+            json!({"session": session, "text": "Hello ArtServer", "x": 20, "y": 280, "size": 18}),
+        )
+        .await,
+    );
+    let run = |id: &'static str, params: Value| {
+        let args = json!({"session": session, "id": id, "params": params});
+        let client = &client;
+        async move { call(client, "command_run", args).await }
+    };
+
+    // edit: find and replace, and copy and paste through the working session's own clipboard
+    let replaced = json_of(&run("edit.findReplace", json!({"find": "Hello", "replace": "Hi"})).await);
+    assert_eq!(replaced["count"], 1, "{replaced}");
+    succeeded(&run("select.set", json!({"ids": [ids[0]]})).await);
+    succeeded(&run("edit.copy", json!({})).await);
+    let pasted = json_of(&run("edit.paste", json!({"dx": 10, "dy": 10})).await);
+    assert!(!pasted["ids"].as_array().unwrap().is_empty(), "{pasted}");
+
+    // select, path and object
+    succeeded(&run("select.set", json!({"ids": [ids[0]]})).await);
+    succeeded(&run("select.same.fillColor", json!({})).await);
+    succeeded(&run("path.reverse", json!({"ids": [ids[1]]})).await);
+    succeeded(&run("select.set", json!({"ids": [ids[1]]})).await);
+    succeeded(&run("object.path.offsetPath", json!({"offset": 5})).await);
+    succeeded(&run("select.set", json!({"ids": [ids[2]]})).await);
+    succeeded(&run("object.envelope.makeWithWarp", json!({"style": "arc", "bend": 30})).await);
+    succeeded(&run("select.set", json!({"ids": [ids[3]]})).await);
+    succeeded(&run("object.repeat.radial", json!({"instances": 6})).await);
+
+    // shape and layer
+    succeeded(&run("shape.spiral", json!({"cx": 320, "cy": 200, "radius": 40})).await);
+    succeeded(&run("layer.duplicate", json!({})).await);
+
+    // Presets only as data: a file path is refused
+    succeeded(&run("perspective.presets.save", json!({"name": "Test View"})).await);
+    let presets = json_of(&run("perspective.presets.export", json!({})).await);
+    assert!(presets.get("data").is_some(), "{presets}");
+    let to_file = run("perspective.presets.export", json!({"path": "/tmp/presets.vcperspective"})).await;
+    assert!(text_of(&to_file).contains("file paths"), "{}", text_of(&to_file));
+
+    // What the second batch left out stays refused
+    for id in [
+        "text.rescanFonts",
+        "graphicStyle.loadLibrary",
+        "perspective.grid.show",
+        "object.intertwine.edit",
+    ] {
+        let r = run(id, json!({})).await;
+        assert!(text_of(&r).contains("not allowed"), "{id}: {}", text_of(&r));
+    }
+    let svg = text_of(&call(&client, "export_document", json!({"session": session, "format": "svg"})).await);
+    assert!(svg.contains("Hi ArtServer"), "{svg}");
     let _ = client.cancel().await;
 }
 

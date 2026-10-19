@@ -726,3 +726,31 @@ The project owner chose a first batch: the read-only commands of "opened step by
 |---|---|
 | `cargo test --offline --locked` | All 70 passed (51 unit, 19 E2E) |
 | `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+## 2026-10-19 Opening the second batch of document commands
+
+### Policy
+
+The project owner wants as many commands open as possible, in batches: second, the rest of "opened step by step"; third, the 47 unclassified; fourth, the 48 "decided individually later". For the second batch, the parameter descriptions of all 369 remaining commands were read, and four points were checked in VectorCraft's code:
+
+| Point | Finding |
+|---|---|
+| Copy and paste (`edit.copy`, `edit.paste*`, `artboard.copy`/`cut`) | The clipboard is a field of the engine's `Session`, and the engine depends on no system clipboard library, so it stays within one working session |
+| `perspective.draw` runs another command | The engine accepts only `shape.*` commands (`distortcmds.rs:1241`), which only draw |
+| `object.rasterize` could make a huge image | The engine refuses results over 64 million pixels or 65,535 pixels on a side (`menucmds.rs:438`) |
+| `colorTheme.save` and `recolor.apply` mention libraries | Themes are kept in the session's preferences; `recolor.apply` only snaps colours to a swatch library, and the engine can't read files outside its empty folder |
+
+357 were opened and 12 left closed: `text.rescanFonts` (rescans the system fonts for the whole process), four graphic style library commands (the user library folder), and seven that only change the screen or the tool (`transparency.viewOpacityMask`, `perspective.widget.options`, `perspective.grid.show`/`rulers`/`lock`/`lockStation`, `object.intertwine.edit`). `dataset.import` and `perspective.presets.import`/`export` work only with data, since the path check refuses a string path.
+
+### What was done
+
+- `src/policy.rs`: the 357 commands, generated from the inventory and grouped by namespace with the reasons for what stays closed; the allowlist has 552.
+- Tests: the 12 closed ones are refused, and the four data-only commands are refused with a path and allowed as data (unit). A new E2E test runs, through `command_run`: find and replace, copy and paste, selecting the same fill colour, reversing a path, offsetting a path, an arc envelope, a radial repeat, a spiral, duplicating a layer, saving and exporting perspective presets as data (a file path is refused), and checks that four of the closed ones answer "not allowed". The first batch's E2E test no longer expects `artboard.copy` and `perspective.presets.export` to be refused.
+- Design policy section 4.7 and chapter 11.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 71 passed (51 unit, 20 E2E). The first run failed in the new E2E test because there were no saved presets to export (an error in the test); saving one first fixed it |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
