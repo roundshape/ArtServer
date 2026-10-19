@@ -31,6 +31,7 @@
   - 2026-10-19 Opened the third batch: the namespaces section 4.7 didn't classify (section 4.7; chapter 11)
   - 2026-10-19 Opened the fourth batch: the commands decided individually (section 4.7; chapter 11)
   - 2026-10-19 Decided not to extend `export_document` with the closed exports' features for now (section 4.7; chapter 11)
+  - 2026-10-19 Decided not to work on CJK fonts on Linux for now (section 7.3; chapter 11; section 13.2)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -458,13 +459,15 @@ Fonts are also needed outside export, in editing that uses text dimensions, such
 
 - The bundled fonts cover Latin script only (Source Sans 3 / Source Serif 4 / Inter / JetBrains Mono, OFL-1.1).
 
-### 7.3 How to handle CJK text (such as Japanese) on Linux (to be decided in Phase 2)
+### 7.3 How to handle CJK text (such as Japanese) on Linux (not done for now)
 
 1. Install fonts on the server (e.g. Noto Sans CJK JP)
 2. Embed them at build time (`CRAFT_FONTS_DIR`; BIZ UDPGothic / Shippori Mincho / BIZ UDMincho)
 3. ArtServer loads the fonts in a specified folder at startup
 
 If method 2 is chosen, the embedded fonts become fonts that ArtServer distributes, and ArtServer bears the responsibility for their license notices (section 1.1). With methods 1 and 3, providing the fonts is the operator's job.
+
+**Not done for now (2026-10-19, decided with the project owner)**: Linux is expected to have few users (section 1.1). Methods 1 and 3 already work (the fonts installed in the server's OS, and `--font-dirs`), so an operator can provide CJK fonts without more work; method 2 is not done. Revisited when users on Linux appear.
 
 ### 7.4 Notes
 
@@ -545,7 +548,7 @@ TLS (terminated at a reverse proxy), multiple users and permission management, p
 |---|---|---|
 | 0 | Investigation of VectorCraft, choice of approach | Done (Option A-2 adopted) |
 | 1 | MVP (chapter 10) | Done (implemented 2026-10-17; connection from Claude Code verified 2026-10-18; `cargo deny` / `cargo about` introduced). Items not yet verified are in section 13.2 |
-| 2 | Feature expansion and compatibility verification (CJK fonts such as Japanese, images, layers, transparency, path operations, verification with real files). Process isolation is not built first (revisit if a condition in section 12.4 applies) | In progress (since 2026-10-18). Done: VectorCraft's tools through GuardedBackend (section 4.7), text and fonts (`list_fonts`, `--font-dirs`), the fix for the weights of Japanese fonts in SVG (chapter 8), URL delivery of exports (section 4.6), upload for import (opening PDF, .ai, SVG, PNG, JPEG and .vectorcraft, and placing images; section 4.6), `.ai` and `.vectorcraft` export (section 4.6), opening the commands (section 4.7; four batches, 594 commands; `export_document` is not extended for now). Remaining: CJK fonts on Linux (section 7.3), verification with real files |
+| 2 | Feature expansion and compatibility verification (CJK fonts such as Japanese, images, layers, transparency, path operations, verification with real files). Process isolation is not built first (revisit if a condition in section 12.4 applies) | In progress (since 2026-10-18). Done: VectorCraft's tools through GuardedBackend (section 4.7), text and fonts (`list_fonts`, `--font-dirs`), the fix for the weights of Japanese fonts in SVG (chapter 8), URL delivery of exports (section 4.6), upload for import (opening PDF, .ai, SVG, PNG, JPEG and .vectorcraft, and placing images; section 4.6), `.ai` and `.vectorcraft` export (section 4.6), opening the commands (section 4.7; four batches, 594 commands; `export_document` is not extended for now). Remaining: verification with real files. Not done for now: CJK fonts on Linux (section 7.3) |
 | 3 | Productization (REST API, multiple users, process isolation (chapter 12), job persistence, Docker, monitoring, threat analysis and load tests) | Not started |
 
 ---
@@ -648,7 +651,7 @@ When migrating, test with emphasis on "the front end keeps running when a worker
 | 10 | Which protocol version real clients such as Claude Code connect with → Connection and operation from Claude Code verified (2026-10-18). The protocol version used is **not yet verified** | During Phase 1 E2E verification |
 | 3 | Whether ArtServer's session type and renderer can move between threads (checked by the compiler) → **Verified** (the build passed) | At the Phase 1 build |
 | 4 | Finalizing third-party licenses (`cargo deny` / `cargo about`) → **Done (2026-10-18)**. `THIRD_PARTY_NOTICES.md` is generated from `deny.toml`, `about.toml` and `about.hbs`. No GPL / LGPL / MPL | Phase 1 |
-| 5 | How to provide CJK fonts (such as Japanese) (section 7.3) | Phase 2 |
+| 5 | How to provide CJK fonts (such as Japanese) (section 7.3) → **Not done for now (2026-10-19)**: the fonts installed in the OS and `--font-dirs` already serve; embedding fonts in the build is not done | When users on Linux appear |
 | 6 | Handling of "VectorCraft" written into output files (PDF Producer etc.) → **Decided (2026-10-19): left as is**. The PDF Creator and Producer stay "VectorCraft", and PDFs keep the embedded editing data (`vectorcraft-editing.vectorcraft`) | Phase 2 |
 | 7 | Checking trademark conflicts for "ArtServer" → **Done (2026-10-19): no conflict found**. US (USPTO): only dead marks (ARTSERVER, abandoned 1997; ARTSERVE, cancelled). Japan (J-PlatPat): no ARTSERVER or アートサーバー; the closest, AUTO SERVER (class 9, including software), is not similar (different first sound and meaning). EU, WIPO and other countries were not checked. Registering "ArtServer" as a trademark would need a patent attorney's review | Before publication |
 | 8 | Whether color settings need to be switched per job (if so, consider moving process isolation earlier; section 12.4) | Phase 2 |

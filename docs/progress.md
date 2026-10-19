@@ -845,3 +845,9 @@ The closed exports and their setup stay closed; what real use shows to be missin
 ### Next steps
 
 1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): real .ai and PDF exports, whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
+
+## 2026-10-19 Not working on CJK fonts on Linux for now
+
+The project owner decided not to work on CJK fonts (such as Japanese) on Linux for now (design policy section 7.3): Linux is expected to have few users. An operator can already provide them, by installing them in the server's OS or with `--font-dirs`; embedding fonts in the build is not done. Revisited when users on Linux appear.
+
+- Design policy section 7.3, chapter 11 (Phase 2's remaining work is now the verification with real files) and section 13.2 #5.
