@@ -28,7 +28,7 @@ use vectorcraft_engine::file_access::AutomationRoots;
 
 use crate::auth::Auth;
 use crate::config::Config;
-use crate::engine_host::EngineLimits;
+use crate::engine_host::{EngineLimits, RunSlots};
 use crate::files::{Downloads, FileStore};
 use crate::session::Sessions;
 use crate::tools::ArtServer;
@@ -61,7 +61,8 @@ impl App {
             max_documents: limits.max_documents,
             history_bytes: limits.history_bytes,
         };
-        let sessions = Arc::new(Sessions::new(limits.max_sessions, limits.session_idle, engine_limits, roots));
+        let slots = Arc::new(RunSlots::new(limits.max_running));
+        let sessions = Arc::new(Sessions::new(limits.max_sessions, limits.session_idle, engine_limits, roots, slots));
         let files = Arc::new(FileStore::new(limits.file_ttl, limits.max_file_bytes));
 
         let mcp_config = StreamableHttpServerConfig::default()

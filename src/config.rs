@@ -61,6 +61,11 @@ pub struct Cli {
     #[arg(long, env = "ARTSERVER_RENDER_THREADS", default_value_t = Limits::default().render_threads)]
     pub render_threads: u16,
 
+    /// Jobs running at once across all working sessions; more wait for a free slot within their time limit
+    /// (default: CPU cores ÷ (rendering threads + 1), at least 1)
+    #[arg(long, env = "ARTSERVER_MAX_RUNNING")]
+    pub max_running: Option<usize>,
+
     /// Seconds large exports and uploaded files are kept (docs/design-policy.md section 4.6)
     #[arg(long, env = "ARTSERVER_FILE_TTL_SECS", default_value_t = Limits::default().file_ttl.as_secs())]
     pub file_ttl_secs: u64,
@@ -113,6 +118,8 @@ pub struct Limits {
     pub max_documents: usize,
     pub history_bytes: usize,
     pub render_threads: u16,
+    /// Jobs running at once across all working sessions (docs/design-policy.md section 5.3)
+    pub max_running: usize,
     /// How long large exports and uploaded files are kept
     pub file_ttl: Duration,
     /// Total size limit of the kept exports and uploaded files (bytes)
@@ -132,6 +139,7 @@ impl Default for Limits {
             max_documents: 8,
             history_bytes: 64 * MIB,
             render_threads: 2,
+            max_running: default_max_running(2),
             file_ttl: Duration::from_secs(10 * 60),
             max_file_bytes: 256 * MIB,
             max_upload_bytes: 64 * MIB,
@@ -174,6 +182,7 @@ impl Cli {
             max_documents: self.max_documents.max(1),
             history_bytes: self.history_mib.saturating_mul(MIB),
             render_threads: self.render_threads,
+            max_running: self.max_running.map_or_else(|| default_max_running(self.render_threads), |n| n.max(1)),
             file_ttl: Duration::from_secs(self.file_ttl_secs.max(1)),
             max_file_bytes: self.max_file_mib.max(1).saturating_mul(MIB),
             max_upload_bytes: self.max_upload_mib.max(1).saturating_mul(MIB),
@@ -190,6 +199,13 @@ impl Cli {
             limits,
         })
     }
+}
+
+/// The default for `--max-running`: an export uses its session's thread and `render_threads` rendering threads,
+/// so the CPU cores divided by that, at least 1.
+pub fn default_max_running(render_threads: u16) -> usize {
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    (cores / (usize::from(render_threads) + 1)).max(1)
 }
 
 /// Checks `--public-url` and makes it (the URL without a trailing /, the host name in lower case). Only a
@@ -265,6 +281,21 @@ mod tests {
             .resolve()
             .unwrap_err();
         assert!(err.contains("allowed-hosts"), "{err}");
+    }
+
+    #[test]
+    fn the_running_jobs_follow_the_cores_unless_given() {
+        let dir = tempfile::tempdir().unwrap();
+        let token = dir.path().join("token");
+        std::fs::write(&token, "t".repeat(40)).unwrap();
+        let token = token.to_str().unwrap();
+        let limits = |args: &[&str]| cli(&[&["--token-file", token], args].concat()).resolve().unwrap().limits;
+        assert_eq!(limits(&["--max-running", "3"]).max_running, 3);
+        assert_eq!(limits(&["--max-running", "0"]).max_running, 1);
+        // The default follows the rendering threads each export uses
+        let cores = std::thread::available_parallelism().unwrap().get();
+        assert_eq!(limits(&[]).max_running, (cores / 3).max(1));
+        assert_eq!(limits(&["--render-threads", "0"]).max_running, cores);
     }
 
     #[test]

@@ -199,6 +199,7 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | 1セッションで開ける文書数 |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | 文書1つあたりの Undo 履歴の上限 |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | 書き出し1回あたりの描画スレッド数 |
+| `--max-running` | `ARTSERVER_MAX_RUNNING` | CPU のコア数 ÷（描画スレッド数 + 1）、最低 1 | すべての作業セッションを合わせて、エンジンが同時に実行するリクエストの数。超えた分は空きを待つ。待つ時間も、1回の呼び出しの制限時間に含まれる |
 | `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | 大きい書き出し結果と、送られたファイルを預かっておく秒数 |
 | `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | 預かる書き出し結果と送られたファイルの合計の上限（メモリに持つ） |
 | `--max-upload-mib` | `ARTSERVER_MAX_UPLOAD_MIB` | 64 | 送られたファイル1つの大きさの上限 |

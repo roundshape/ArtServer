@@ -676,3 +676,23 @@ The project owner chose options A and B from the check entry above: mark the bun
 - `src/tools.rs`: the server description and the `session_close` description now tell the AI to call `session_close` when the work is done, and only once the user has the files they need, since closing discards the documents, exports and uploads and makes the download URLs stop working. Without this, working sessions mostly ended by idle disposal (30 minutes) and counted toward the limit of 8 until then (found in the review of concurrency and sessions above).
 - `cargo test --offline --locked`: all 64 passed (46 unit, 18 E2E). `cargo clippy` / `cargo fmt --check`: no warnings / no changes.
 - Not yet verified: whether the AI follows it (part of the check from Claude Code).
+
+## 2026-10-19 A server-wide limit on the jobs running at once
+
+### Policy
+
+From the review of concurrency and sessions above: there was no server-wide limit on heavy work, so many working sessions exporting at once could take every core. The project owner chose to make the limit a setting. Every job counts, light ones included (they finish quickly, and telling heavy work apart inside VectorCraft's generic tools would be unreliable). The default follows the CPU cores. The wait for a slot counts toward the time limit of the call, as the queue wait already does. Design policy section 5.3.
+
+### What was done
+
+- `src/engine_host.rs`: `RunSlots`, shared by every working session's executor. A session's thread takes a slot before running a job and gives it back when the job is done; while all slots are taken, it waits, checking every 50 ms whether the caller gave up or ran out of time, and then doesn't run the job.
+- `src/config.rs`: `--max-running` (`ARTSERVER_MAX_RUNNING`). The default is the CPU cores ÷ (rendering threads + 1), at least 1, because an export uses its session's thread and `--render-threads` rendering threads. `src/session.rs` and `src/lib.rs` pass the slots to the executors; `src/main.rs` logs the value at startup.
+- README (English and Japanese) settings table, and design policy section 5.3.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 68 passed (50 unit, 18 E2E). New unit tests: a slot is waited for and handed over, a cancelled job stops waiting, two sessions share one slot (the second waits, a cancelled one never runs), and the setting and its default |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+| Startup on this Mac (8 cores) | `max_running=2` in the log (8 ÷ 3) |

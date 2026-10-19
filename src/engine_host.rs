@@ -3,10 +3,12 @@
 //! Each working session has one dedicated thread, and only that thread touches the engine's `Session`. Only
 //! command IDs, tool names and JSON arguments and results cross the boundary (docs/design-policy.md
 //! section 4.3). Requests to the same working session run one at a time in the order they arrive; when
-//! the queue is full, they are refused as busy.
+//! the queue is full, they are refused as busy. Across working sessions, at most `--max-running` jobs run at
+//! once ([`RunSlots`]); the others wait for a free slot.
 
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::Duration;
 
 use serde_json::Value;
 use tokio::sync::mpsc::error::TrySendError;
@@ -22,6 +24,54 @@ use crate::policy::{self, Caller};
 /// Stack size of the engine thread. Imports run on threads of their own with large stacks, so this only
 /// needs to be big enough for ordinary commands.
 const STACK_SIZE: usize = 8 * 1024 * 1024;
+
+/// How often a job waiting for a slot checks whether its caller gave up.
+const SLOT_POLL: Duration = Duration::from_millis(50);
+
+/// The jobs allowed to run at once across all working sessions (docs/design-policy.md section 5.3). Each
+/// export already uses its session's thread and `--render-threads` rendering threads, so this keeps many
+/// sessions working at once from taking every core.
+pub struct RunSlots {
+    free: Mutex<usize>,
+    freed: Condvar,
+}
+
+impl RunSlots {
+    pub fn new(slots: usize) -> Self {
+        Self {
+            free: Mutex::new(slots.max(1)),
+            freed: Condvar::new(),
+        }
+    }
+
+    /// Waits for a free slot. `None` when `token` is cancelled first: the caller gave up or ran out of time
+    /// (the time limit counts the wait), so the job doesn't run.
+    fn take(&self, token: &CancelToken) -> Option<RunSlot<'_>> {
+        let mut free = self.free.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if token.is_cancelled() {
+                return None;
+            }
+            if *free > 0 {
+                *free -= 1;
+                return Some(RunSlot { slots: self });
+            }
+            free = self.freed.wait_timeout(free, SLOT_POLL).unwrap_or_else(PoisonError::into_inner).0;
+        }
+    }
+}
+
+/// A slot taken from [`RunSlots`], given back when dropped.
+struct RunSlot<'a> {
+    slots: &'a RunSlots,
+}
+
+impl Drop for RunSlot<'_> {
+    fn drop(&mut self) {
+        *self.slots.free.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        self.slots.freed.notify_one();
+    }
+}
 
 /// One command for the engine to run.
 #[derive(Clone, Debug)]
@@ -114,13 +164,13 @@ pub struct EngineHost {
 
 impl EngineHost {
     /// Starts a dedicated thread that holds a new engine `Session`.
-    /// The engine's file access is always confined to `roots`.
-    pub fn spawn(limits: EngineLimits, roots: Arc<AutomationRoots>) -> std::io::Result<Self> {
+    /// The engine's file access is always confined to `roots`, and each job runs in one of the shared `slots`.
+    pub fn spawn(limits: EngineLimits, roots: Arc<AutomationRoots>, slots: Arc<RunSlots>) -> std::io::Result<Self> {
         let (jobs, rx) = mpsc::channel(limits.queue_depth.max(1));
         std::thread::Builder::new()
             .name("artserver-session".into())
             .stack_size(STACK_SIZE)
-            .spawn(move || serve(rx, &limits, &roots))?;
+            .spawn(move || serve(rx, &limits, &roots, &slots))?;
         Ok(Self { jobs })
     }
 
@@ -151,27 +201,30 @@ impl EngineHost {
     }
 }
 
-fn serve(mut jobs: mpsc::Receiver<Job>, limits: &EngineLimits, roots: &Arc<AutomationRoots>) {
+fn serve(mut jobs: mpsc::Receiver<Job>, limits: &EngineLimits, roots: &Arc<AutomationRoots>, slots: &RunSlots) {
     let mut session = Session::new();
     while let Some(job) = jobs.blocking_recv() {
-        // Don't run a request the caller gave up on while it was waiting
-        let result = if job.token.is_cancelled() {
-            Err(HostError::Cancelled)
-        } else {
-            file_access::confine(Some(roots), || {
-                cancel::scope(&job.token, None, || match &job.work {
-                    Work::Steps(steps) => run_steps(&mut session, steps, limits).map(Done::Steps),
-                    Work::Tool { name, args } => {
-                        let result = vectorcraft_mcp::call_tool(&mut GuardedBackend::new(&mut session, limits), name, args);
-                        // A cancelled tool ran only part of the way, so report the cancellation rather than a result
-                        if job.token.is_cancelled() {
-                            Err(HostError::Cancelled)
-                        } else {
-                            Ok(Done::Tool(result))
+        let result = match slots.take(&job.token) {
+            // Don't run a request the caller gave up on while it was waiting, in the queue or for a slot
+            None => Err(HostError::Cancelled),
+            Some(slot) => {
+                let result = file_access::confine(Some(roots), || {
+                    cancel::scope(&job.token, None, || match &job.work {
+                        Work::Steps(steps) => run_steps(&mut session, steps, limits).map(Done::Steps),
+                        Work::Tool { name, args } => {
+                            let result = vectorcraft_mcp::call_tool(&mut GuardedBackend::new(&mut session, limits), name, args);
+                            // A cancelled tool ran only part of the way, so report the cancellation rather than a result
+                            if job.token.is_cancelled() {
+                                Err(HostError::Cancelled)
+                            } else {
+                                Ok(Done::Tool(result))
+                            }
                         }
-                    }
-                })
-            })
+                    })
+                });
+                drop(slot);
+                result
+            }
         };
         let _ = job.reply.send(result);
     }
@@ -230,6 +283,10 @@ mod tests {
     use serde_json::json;
 
     fn host(dir: &tempfile::TempDir, max_documents: usize) -> EngineHost {
+        host_with_slots(dir, max_documents, Arc::new(RunSlots::new(4)))
+    }
+
+    fn host_with_slots(dir: &tempfile::TempDir, max_documents: usize, slots: Arc<RunSlots>) -> EngineHost {
         let roots = AutomationRoots::new(Some(dir.path()), None).unwrap().unwrap();
         EngineHost::spawn(
             EngineLimits {
@@ -238,8 +295,61 @@ mod tests {
                 history_bytes: 8 << 20,
             },
             roots,
+            slots,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn a_slot_is_waited_for_and_handed_over() {
+        let slots = Arc::new(RunSlots::new(1));
+        let held = slots.take(&CancelToken::new()).unwrap();
+        let (taken, got) = std::sync::mpsc::channel();
+        let waiter = {
+            let slots = slots.clone();
+            std::thread::spawn(move || {
+                let slot = slots.take(&CancelToken::new());
+                taken.send(slot.is_some()).unwrap();
+            })
+        };
+        assert!(got.recv_timeout(Duration::from_millis(200)).is_err(), "no slot is free yet");
+        drop(held);
+        assert!(got.recv_timeout(Duration::from_secs(5)).unwrap(), "the freed slot is handed over");
+        waiter.join().unwrap();
+    }
+
+    #[test]
+    fn a_cancelled_job_stops_waiting_for_a_slot() {
+        let slots = Arc::new(RunSlots::new(1));
+        let _held = slots.take(&CancelToken::new()).unwrap();
+        let token = CancelToken::new();
+        let waiter = {
+            let (slots, token) = (slots.clone(), token.clone());
+            std::thread::spawn(move || slots.take(&token).is_some())
+        };
+        token.cancel();
+        assert!(!waiter.join().unwrap(), "a cancelled job gets no slot");
+    }
+
+    #[tokio::test]
+    async fn sessions_share_the_slots() {
+        // With one slot, a job of another session waits until the slot is free; a cancelled one never runs
+        let dir = tempfile::tempdir().unwrap();
+        let slots = Arc::new(RunSlots::new(1));
+        let host = host_with_slots(&dir, 2, slots.clone());
+        let held = slots.take(&CancelToken::new()).unwrap();
+        let waiting = tokio::spawn(async move { host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await.is_ok() });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!waiting.is_finished(), "the job waits for the slot");
+        drop(held);
+        assert!(waiting.await.unwrap(), "the job runs once the slot is free");
+
+        let other = host_with_slots(&dir, 2, slots.clone());
+        let _held = slots.take(&CancelToken::new()).unwrap();
+        let token = CancelToken::new();
+        token.cancel();
+        let err = other.run(vec![Step::new("file.new", json!({}))], token).await.unwrap_err();
+        assert!(matches!(err, HostError::Cancelled), "{err}");
     }
 
     #[tokio::test]

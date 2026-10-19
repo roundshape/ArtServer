@@ -27,7 +27,12 @@ async fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    tracing::info!(bind = %config.bind, max_sessions = config.limits.max_sessions, "artserver listening; MCP endpoint is /mcp");
+    tracing::info!(
+        bind = %config.bind,
+        max_sessions = config.limits.max_sessions,
+        max_running = config.limits.max_running,
+        "artserver listening; MCP endpoint is /mcp"
+    );
 
     match artserver::serve(config, listener, shutdown_signal()).await {
         Ok(()) => ExitCode::SUCCESS,

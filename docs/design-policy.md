@@ -24,6 +24,7 @@
   - 2026-10-19 Added `.ai` (PDF-compatible only) and `.vectorcraft` export, and `.vectorcraft` upload (section 4.6; chapter 11)
   - 2026-10-19 Write `.ai` without PDF layers, after checking in Illustrator (section 4.6)
   - 2026-10-19 Mark the bundled fonts in `list_fonts`, and tell the AI to prefer installed fonts (section 7.4)
+  - 2026-10-19 Added a server-wide limit on the jobs running at once (section 5.3)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -367,7 +368,7 @@ Categories for opening commands (initial plan; each command is reviewed when it 
 | Problem | Measure |
 |---|---|
 | Settings shared across the whole process (color settings, ICC profiles, font DB, plugin registration, hyphenation exceptions, etc.) affect everyone if one session changes them | Do not allow commands that change them |
-| Each export creates up to 8 rendering threads, so concurrent exports make the thread count explode | Limit the number of rendering threads (`VECTORCRAFT_RENDER_THREADS`), and set a global limit on concurrent heavy operations |
+| Each export creates up to 8 rendering threads, so concurrent exports make the thread count explode | Limit the number of rendering threads (`--render-threads`, default 2), and set a global limit on concurrent heavy operations: **implemented 2026-10-19** as `--max-running` (`ARTSERVER_MAX_RUNNING`), the jobs the engine runs at once across all working sessions, light ones included; others wait for a free slot, and the wait counts toward the time limit of the call. The default is the CPU cores ÷ (rendering threads + 1), at least 1 |
 | Undo history alone uses up to 1GiB per document | Set limits on the number of sessions, the number of documents, and history bytes |
 | The first font lookup scans all fonts, and everyone waits during it | Scan in advance at startup |
 | The glyph cache shares a single lock and may become contended | Check in the Phase 3 load tests |

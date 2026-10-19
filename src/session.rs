@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use vectorcraft_engine::file_access::AutomationRoots;
 
 use crate::auth::Principal;
-use crate::engine_host::{EngineHost, EngineLimits};
+use crate::engine_host::{EngineHost, EngineLimits, RunSlots};
 
 /// Number of random bytes in a handle.
 const HANDLE_BYTES: usize = 32;
@@ -48,16 +48,19 @@ pub struct Sessions {
     idle: Duration,
     engine_limits: EngineLimits,
     roots: Arc<AutomationRoots>,
+    /// The jobs allowed to run at once, shared by every session's executor
+    slots: Arc<RunSlots>,
 }
 
 impl Sessions {
-    pub fn new(max_sessions: usize, idle: Duration, engine_limits: EngineLimits, roots: Arc<AutomationRoots>) -> Self {
+    pub fn new(max_sessions: usize, idle: Duration, engine_limits: EngineLimits, roots: Arc<AutomationRoots>, slots: Arc<RunSlots>) -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
             max_sessions,
             idle,
             engine_limits,
             roots,
+            slots,
         }
     }
 
@@ -73,7 +76,8 @@ impl Sessions {
             return Err(SessionError::TooMany(self.max_sessions));
         }
         let handle = new_handle()?;
-        let host = EngineHost::spawn(self.engine_limits.clone(), self.roots.clone()).map_err(|e| SessionError::Internal(e.to_string()))?;
+        let host = EngineHost::spawn(self.engine_limits.clone(), self.roots.clone(), self.slots.clone())
+            .map_err(|e| SessionError::Internal(e.to_string()))?;
         entries.insert(
             handle.clone(),
             Entry {
@@ -141,6 +145,7 @@ mod tests {
                 history_bytes: 1 << 20,
             },
             roots,
+            Arc::new(RunSlots::new(2)),
         )
     }
 

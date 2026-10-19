@@ -199,6 +199,7 @@ Coordinates are in points (1/72 inch), with the origin at the artboard's top-lef
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | Number of documents open in one session |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | Undo history limit per document |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | Rendering threads per export |
+| `--max-running` | `ARTSERVER_MAX_RUNNING` | CPU cores ÷ (rendering threads + 1), at least 1 | Requests the engine runs at once across all working sessions. Others wait for a free slot; the wait counts toward the time limit of one call |
 | `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | Seconds large exports and uploaded files are kept |
 | `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | Total size limit of the kept exports and uploaded files (kept in memory) |
 | `--max-upload-mib` | `ARTSERVER_MAX_UPLOAD_MIB` | 64 | Size limit of one uploaded file |
