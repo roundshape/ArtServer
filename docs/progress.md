@@ -627,3 +627,22 @@ The English line was set in Inter (`Inter-Regular` embedded), which is not insta
 ### Not yet verified
 
 - The regenerated `.ai` files in Illustrator
+
+## 2026-10-19 Checking again from the start (after the .ai change)
+
+The project owner cleared `~/Desktop/artserver-output/`, and the checks were run again with the server built from `d05794e`. The English line now used Helvetica Neue, which is installed on the Mac, instead of the bundled Inter.
+
+| What was checked | Result |
+|---|---|
+| Fonts | Helvetica Neue and Hiragino Sans W6, both exact |
+| Export `.ai` (13,073 bytes) | No warnings, no PDF layers; embedded fonts HelveticaNeue and HiraginoSans-W6 |
+| Send the `.ai` back and open it | `restored: true`; the two layers and six objects, with their names, matched the original |
+| Send the `.vectorcraft` back and open it | The layers and objects matched the original |
+| Place the `.ai` and a PNG into another document | One group (placed text becomes outlines), and the PNG at the given size |
+| Send the `.ai` from Chrome's upload page | "Sent…", then `open_upload` gave `restored: true` (the Send button was again pressed from inside the page) |
+| Illustrator (the project owner) | `ai-1-shape.ai`, `ai-3-shapes.ai` and `artserver-check.ai` were fine: the shapes select one by one, and the fonts are not missing |
+
+### Next steps
+
+1. Decide how to handle the bundled fonts (options A, B, C in the check entry above)
+2. Check from Claude Code in a new conversation, with real `.ai` and PDF files
