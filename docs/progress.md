@@ -941,3 +941,9 @@ Reading this showed that rmcp's client, which the other E2E tests use, also star
 The project owner decided that ArtServer doesn't support Docker: no Dockerfile or container image is provided, and Docker is no longer part of Phase 3. Process isolation (design policy chapter 12) doesn't depend on it, since isolation by OS process and Docker containers are different things (section 12.1).
 
 - Design policy chapter 11 (Phase 3) and sections 12.1 and 12.6; `docs/DEVELOPMENT_PLAN.md` sections 2 and 5 (the decision added after "→"). The external review `docs/ARTSERVER_PROCESS_ISOLATION_REVIEW.md` is left as written.
+
+## 2026-10-19 Not switching color settings per job for now
+
+The project owner decided that switching color settings per job (design policy section 13.2 #8; for example a Japan Color profile for one print job and another for the next) waits; it was listed for Phase 2. The engine keeps one set of color settings for the whole process (`crates/color/src/cms/mod.rs:892`), and even `edit.assignProfile` on one document replaces it (`crates/engine/src/cmd/colormgmt.rs:264`), so the commands stay closed and every working session uses the defaults: RGB sRGB and CMYK "VectorCraft Generic CMYK (SWOP-like)", the engine's own model. VectorCraft has no Japan Color built in, and ICC profiles can't be loaded (`color.loadProfile` is closed). Revisited when print work needs CMYK conversion per printing condition on the server, which would bring process isolation forward (section 12.4).
+
+- Design policy section 13.2 #8.
