@@ -696,3 +696,10 @@ From the review of concurrency and sessions above: there was no server-wide limi
 | `cargo test --offline --locked` | All 68 passed (50 unit, 18 E2E). New unit tests: a slot is waited for and handed over, a cancelled job stops waiting, two sessions share one slot (the second waits, a cancelled one never runs), and the setting and its default |
 | `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
 | Startup on this Mac (8 cores) | `max_running=2` in the log (8 ÷ 3) |
+
+## 2026-10-19 The queue length as a setting
+
+- `src/config.rs`: `--queue-depth` (`ARTSERVER_QUEUE_DEPTH`, default 8): the requests one working session can have waiting in its queue; more are refused as busy. It was fixed at 8 before (found in the review of concurrency and sessions above).
+- New unit test: with a queue of one, while the session's thread waits for a slot, the second request waits in the queue and the third is refused as busy (the slot is held by the test, so the timing doesn't depend on how long the engine takes; passed 10 runs in a row). The config test covers the default and the value.
+- README (English and Japanese) settings table, and design policy section 5.1.
+- `cargo test --offline --locked`: all 69 passed (51 unit, 18 E2E). `cargo clippy` / `cargo fmt --check`: no warnings / no changes.

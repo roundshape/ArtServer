@@ -196,6 +196,7 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `--session-idle-secs` | `ARTSERVER_SESSION_IDLE_SECS` | 1800 | 使われないセッションを破棄するまでの秒数 |
 | `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | 1回の呼び出しの制限時間 |
 | `--max-body-bytes` | `ARTSERVER_MAX_BODY_BYTES` | 16777216 | 要求本文の上限 |
+| `--queue-depth` | `ARTSERVER_QUEUE_DEPTH` | 8 | 1つの作業セッションの待ち行列で順番を待てるリクエストの数。超えた分は混雑中として断る |
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | 1セッションで開ける文書数 |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | 文書1つあたりの Undo 履歴の上限 |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | 書き出し1回あたりの描画スレッド数 |

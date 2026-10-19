@@ -287,10 +287,14 @@ mod tests {
     }
 
     fn host_with_slots(dir: &tempfile::TempDir, max_documents: usize, slots: Arc<RunSlots>) -> EngineHost {
+        spawn_host(dir, 4, max_documents, slots)
+    }
+
+    fn spawn_host(dir: &tempfile::TempDir, queue_depth: usize, max_documents: usize, slots: Arc<RunSlots>) -> EngineHost {
         let roots = AutomationRoots::new(Some(dir.path()), None).unwrap().unwrap();
         EngineHost::spawn(
             EngineLimits {
-                queue_depth: 4,
+                queue_depth,
                 max_documents,
                 history_bytes: 8 << 20,
             },
@@ -298,6 +302,26 @@ mod tests {
             slots,
         )
         .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_full_queue_refuses_requests_as_busy() {
+        // The session's thread takes the first request and waits for the held slot. With a queue of one, the
+        // second request waits in the queue and the third is refused at once
+        let dir = tempfile::tempdir().unwrap();
+        let slots = Arc::new(RunSlots::new(1));
+        let held = slots.take(&CancelToken::new()).unwrap();
+        let host = Arc::new(spawn_host(&dir, 1, 2, slots.clone()));
+        let run = |host: Arc<EngineHost>| tokio::spawn(async move { host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await });
+        let first = run(host.clone());
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let second = run(host.clone());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let err = host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await.unwrap_err();
+        assert!(matches!(err, HostError::Busy), "{err}");
+        drop(held);
+        assert!(first.await.unwrap().is_ok());
+        assert!(second.await.unwrap().is_ok());
     }
 
     #[test]

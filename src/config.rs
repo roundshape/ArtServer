@@ -49,6 +49,10 @@ pub struct Cli {
     #[arg(long, env = "ARTSERVER_MAX_BODY_BYTES", default_value_t = Limits::default().max_body_bytes)]
     pub max_body_bytes: usize,
 
+    /// Requests one working session can have waiting in its queue; more are refused as busy
+    #[arg(long, env = "ARTSERVER_QUEUE_DEPTH", default_value_t = Limits::default().queue_depth)]
+    pub queue_depth: usize,
+
     /// Number of documents one working session can have open at once
     #[arg(long, env = "ARTSERVER_MAX_DOCUMENTS", default_value_t = Limits::default().max_documents)]
     pub max_documents: usize,
@@ -179,6 +183,7 @@ impl Cli {
             session_idle: Duration::from_secs(self.session_idle_secs.max(1)),
             call_timeout: Duration::from_secs(self.call_timeout_secs.max(1)),
             max_body_bytes: self.max_body_bytes,
+            queue_depth: self.queue_depth.max(1),
             max_documents: self.max_documents.max(1),
             history_bytes: self.history_mib.saturating_mul(MIB),
             render_threads: self.render_threads,
@@ -186,7 +191,6 @@ impl Cli {
             file_ttl: Duration::from_secs(self.file_ttl_secs.max(1)),
             max_file_bytes: self.max_file_mib.max(1).saturating_mul(MIB),
             max_upload_bytes: self.max_upload_mib.max(1).saturating_mul(MIB),
-            ..Limits::default()
         };
         let font_dirs = font_dirs(self.font_dirs)?;
         Ok(Config {
@@ -296,6 +300,10 @@ mod tests {
         let cores = std::thread::available_parallelism().unwrap().get();
         assert_eq!(limits(&[]).max_running, (cores / 3).max(1));
         assert_eq!(limits(&["--render-threads", "0"]).max_running, cores);
+        // The queue of one working session
+        assert_eq!(limits(&[]).queue_depth, 8);
+        assert_eq!(limits(&["--queue-depth", "2"]).queue_depth, 2);
+        assert_eq!(limits(&["--queue-depth", "0"]).queue_depth, 1);
     }
 
     #[test]

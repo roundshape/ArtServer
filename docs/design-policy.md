@@ -25,6 +25,7 @@
   - 2026-10-19 Write `.ai` without PDF layers, after checking in Illustrator (section 4.6)
   - 2026-10-19 Mark the bundled fonts in `list_fonts`, and tell the AI to prefer installed fonts (section 7.4)
   - 2026-10-19 Added a server-wide limit on the jobs running at once (section 5.3)
+  - 2026-10-19 Made the queue length of a working session a setting (section 5.1)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -352,7 +353,7 @@ Categories for opening commands (initial plan; each command is reviewed when it 
 | Kind | Handling | Reason |
 |---|---|---|
 | **Arriving at the same time from different clients** | **Processed in parallel.** Each session has a dedicated thread | Each session handles only its own documents, so they do not need to wait for each other. Confirmed that the engine Session can move between threads (Send) |
-| **Arriving at the same time for the same working session (same handle)** | **Processed one at a time, in arrival order.** The queue has a limit, and on overflow a "busy" error is returned | Rewriting one document concurrently corrupts it. Order matters in editing ("create → fill" fails if reversed) |
+| **Arriving at the same time for the same working session (same handle)** | **Processed one at a time, in arrival order.** The queue has a limit (`--queue-depth`, default 8; a setting since 2026-10-19), and on overflow a "busy" error is returned | Rewriting one document concurrently corrupts it. Order matters in editing ("create → fill" fails if reversed) |
 
 - HTTP requests are accepted with async processing, and heavy work runs on the session's thread. Health checks etc. can be answered even during rendering.
 - Cancellation is accepted even during execution (using the engine's cooperative cancellation). With Streamable HTTP, cancellation happens when the client closes the response stream.

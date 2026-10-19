@@ -196,6 +196,7 @@ Coordinates are in points (1/72 inch), with the origin at the artboard's top-lef
 | `--session-idle-secs` | `ARTSERVER_SESSION_IDLE_SECS` | 1800 | Seconds before an unused session is discarded |
 | `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | Time limit for one call |
 | `--max-body-bytes` | `ARTSERVER_MAX_BODY_BYTES` | 16777216 | Maximum request body size |
+| `--queue-depth` | `ARTSERVER_QUEUE_DEPTH` | 8 | Requests one working session can have waiting in its queue; more are refused as busy |
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | Number of documents open in one session |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | Undo history limit per document |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | Rendering threads per export |
