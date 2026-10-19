@@ -398,3 +398,66 @@ Restarted ArtServer with the v0.13.1 binary and checked from Claude Code. Everyt
 ### Next steps
 
 1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)
+
+## 2026-10-19 What exported files record about VectorCraft
+
+### Background
+
+The project owner asked whether the "VectorCraft" that PDFs record shows on the page, and whether `.ai` and `.vectorcraft` record it too. Checked by exporting from a temporary ArtServer (`target/debug/artserver` on port 18471, stopped afterwards) and by reading the VectorCraft v0.13.1 source.
+
+### Results
+
+| Format | What is recorded | How it was checked |
+|---|---|---|
+| PDF | Creator and Producer `VectorCraft`, in the document information and in XMP (`xmp:CreatorTool`, `pdf:Producer`). Nothing on the page: it shows only in the document properties | Exported and read with `pdfinfo` |
+| PDF | The embedded file `vectorcraft-editing.vectorcraft` (the native document, with `"generator":"VectorCraft 0.13.1"`), described as "VectorCraft editing data". Written because of VectorCraft's PDF setting `preserve_editing` | Exported and extracted |
+| VectorCraft's `.ai` | A PDF that always carries the editing data (`encode_ai` forces `preserveEditing`), with the same Creator and Producer | Source |
+| `.vectorcraft` | `"generator": "VectorCraft <version>"` at the top of the JSON (`crates/format/src/lib.rs:352`) | Source |
+| Legacy `.ai` (PostScript) | `%%Creator: VectorCraft <version>` (`crates/eps/src/legacy_ai.rs:168`) | Source |
+| SVG / PNG | None. PNG has only `Title` and `Creation Time` | Exported |
+
+- VectorCraft writes these names as fixed strings; ArtServer has no setting for them. The licenses (MIT OR Apache-2.0) neither require nor forbid them, and VectorCraft's brand terms cover only the ArtCraft marks. How to handle them is still open (design policy section 13.2, #6).
+- ArtServer can't export `.ai` or `.vectorcraft`, and it opens only SVG. If PDF import were allowed, the editing data in ArtServer's PDFs could serve for saving work and resuming it later (not tried).
+
+## 2026-10-19 English for the project
+
+### Policy
+
+The project owner decided that ArtServer is not aimed at Japan only. The docs, code comments, config comments and commit messages are in English from now on. The READMEs keep a Japanese copy.
+
+### What was done
+
+- `README.md` and `vendor/README.md`: full English translations. The Japanese versions moved to `README.ja.md` and `vendor/README.ja.md`, with language links at the top. Fixed three outdated points in both languages: the status (Phase 2 in progress, MVP done), PDF export (a download URL by default, not Base64) and the platforms (Linux and Windows are build-checked only).
+- Translated the five documents in `docs/`. Compared each with the original by script: the line counts, headings, table rows, code spans and URLs are the same, apart from the intended changes. Aligned three wordings between the documents.
+- Translated the comments in `src/`, `tests/`, `Cargo.toml`, `about.toml`, `deny.toml`, the GitHub Actions workflows (including the step names) and `vendor/vectorcraft-svg/Cargo.toml`. `artserver --help` is now in English.
+- Generalized Japan-specific wording: `example.co.jp` → `example.com` (code, tests, READMEs, docs), and "Japanese fonts" as a general requirement → "CJK fonts such as Japanese". Facts about specific Japanese fonts (Hiragino, the W0–W9 weights) stay. Japanese strings that are test data stay.
+- Design policy chapter 11: Phase 2 is in progress since 2026-10-18, with what is done and what remains. Added both changes to its revision history.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | No changes, after `cargo fmt` put one assertion in `src/config.rs` on a single line (it fits with the shorter domain) |
+| `cargo clippy --all-targets --offline --locked` | No warnings |
+| `cargo test --offline --locked` | All 54 passed (39 unit, 15 E2E) |
+| Parsing the edited TOML and YAML files | ok |
+| `cargo deny check` | Not run: `cargo-deny` was not found in this shell. Only comments changed in `deny.toml` |
+
+- Committed as `8c0819f`, `66cdf16` and `d40af63` and pushed to main. The Linux build on GitHub Actions could not be checked with `gh` (HTTP 404: `gh` is logged in with a different account from the SSH alias used for push).
+
+## 2026-10-19 Notes from reviewing concurrency and sessions (no changes)
+
+Found while explaining how concurrent requests and working sessions are handled. Nothing was changed.
+
+- There is no process-wide limit on concurrent heavy work, which design policy section 5.3 plans. Up to 8 working sessions can export at once, each with up to 2 rendering threads.
+- The time limit (`--call-timeout-secs`) also counts the time a request waits in the queue, so a request can time out before it starts.
+- The queue depth (8) has no command-line setting.
+- No test covers working sessions running in parallel or the busy error.
+- The server description tells the AI to call `session_create` first but doesn't mention `session_close`, so working sessions most likely end by idle disposal (30 minutes) and count toward the limit of 8 until then.
+- `LocalSessionManager` is passed to rmcp but not used, because legacy session mode is off. `NeverSessionManager` would state that intent.
+
+### Next steps
+
+1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)
+2. Decide how exported files record "VectorCraft" (design policy section 13.2, #6)
+3. Check the name "ArtServer" for trademark conflicts before publishing (design policy section 13.2, #7)
