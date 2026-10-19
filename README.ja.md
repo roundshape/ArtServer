@@ -194,13 +194,13 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `--allowed-origins` | `ARTSERVER_ALLOWED_ORIGINS` | なし | 受け付ける Origin。空なら Origin 付きの要求（ブラウザから）をすべて拒否 |
 | `--max-sessions` | `ARTSERVER_MAX_SESSIONS` | 8 | 同時に持てる作業セッション数 |
 | `--session-idle-secs` | `ARTSERVER_SESSION_IDLE_SECS` | 1800 | 使われないセッションを破棄するまでの秒数 |
-| `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | 1回の呼び出しの制限時間 |
+| `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | 1回の呼び出しの制限時間。実際に動き始めたときから数える。同じ時間待っても始められない呼び出し（同じ作業セッションの前のリクエストや、実行枠の空きを待っているもの）は実行せず、そのことを返す |
 | `--max-body-bytes` | `ARTSERVER_MAX_BODY_BYTES` | 16777216 | 要求本文の上限 |
 | `--queue-depth` | `ARTSERVER_QUEUE_DEPTH` | 8 | 1つの作業セッションの待ち行列で順番を待てるリクエストの数。超えた分は混雑中として断る |
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | 1セッションで開ける文書数 |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | 文書1つあたりの Undo 履歴の上限 |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | 書き出し1回あたりの描画スレッド数 |
-| `--max-running` | `ARTSERVER_MAX_RUNNING` | CPU のコア数 ÷（描画スレッド数 + 1）、最低 1 | すべての作業セッションを合わせて、エンジンが同時に実行するリクエストの数。超えた分は空きを待つ。待つ時間も、1回の呼び出しの制限時間に含まれる |
+| `--max-running` | `ARTSERVER_MAX_RUNNING` | CPU のコア数 ÷（描画スレッド数 + 1）、最低 1 | すべての作業セッションを合わせて、エンジンが同時に実行するリクエストの数。超えた分は空きを待つ。待てるのは、1回の呼び出しの制限時間まで |
 | `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | 大きい書き出し結果と、送られたファイルを預かっておく秒数 |
 | `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | 預かる書き出し結果と送られたファイルの合計の上限（メモリに持つ） |
 | `--max-upload-mib` | `ARTSERVER_MAX_UPLOAD_MIB` | 64 | 送られたファイル1つの大きさの上限 |

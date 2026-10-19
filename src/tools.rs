@@ -11,7 +11,6 @@
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
 
 use axum::body::Bytes;
 use base64::Engine as _;
@@ -95,7 +94,6 @@ pub struct ArtServer {
     files: Arc<FileStore>,
     /// ArtServer's URL as seen from outside (--public-url). Used for export and upload URLs
     public_url: Option<Arc<str>>,
-    call_timeout: Duration,
     /// Size limit of one uploaded file, told to the AI with the upload URL
     max_upload_bytes: usize,
     tool_router: ToolRouter<Self>,
@@ -269,13 +267,7 @@ impl Delivery {
 }
 
 impl ArtServer {
-    pub fn new(
-        sessions: Arc<Sessions>,
-        files: Arc<FileStore>,
-        public_url: Option<Arc<str>>,
-        call_timeout: Duration,
-        max_upload_bytes: usize,
-    ) -> Self {
+    pub fn new(sessions: Arc<Sessions>, files: Arc<FileStore>, public_url: Option<Arc<str>>, max_upload_bytes: usize) -> Self {
         let mut tool_router = Self::tool_router();
         for tool in vectorcraft_tools() {
             tool_router.add_route(ToolRoute::new_dyn(tool.clone(), call_vectorcraft_tool));
@@ -284,7 +276,6 @@ impl ArtServer {
             sessions,
             files,
             public_url,
-            call_timeout,
             max_upload_bytes,
             tool_router,
         }
@@ -316,7 +307,7 @@ impl ArtServer {
         let owner = principal(parts)?;
         let host = self.sessions.get(handle, &owner).map_err(session_error)?;
         let token = CancelToken::new();
-        Ok(self.within_limits(host.run(steps, token.clone()), &token, ct).await)
+        Ok(self.unless_cancelled(host.run(steps, token.clone()), &token, ct).await)
     }
 
     /// Runs one step and returns its result as is, as the structured result.
@@ -339,15 +330,15 @@ impl ArtServer {
         let owner = principal(parts)?;
         let host = self.sessions.get(handle, &owner).map_err(session_error)?;
         let token = CancelToken::new();
-        Ok(match self.within_limits(host.run_tool(name, args, token.clone()), &token, ct).await {
+        Ok(match self.unless_cancelled(host.run_tool(name, args, token.clone()), &token, ct).await {
             Ok(result) => tool_result(result),
             Err(e) => e,
         })
     }
 
-    /// Waits for `run`, watching the time limit and the client's cancellation. When either cuts it short,
+    /// Waits for `run` (which keeps the time limits, `EngineHost`) unless the client cancels the call first; then
     /// asks the engine through `token` to stop.
-    async fn within_limits<T>(
+    async fn unless_cancelled<T>(
         &self,
         run: impl Future<Output = Result<T, HostError>>,
         token: &CancelToken,
@@ -358,10 +349,6 @@ impl ArtServer {
             _ = ct.cancelled() => {
                 token.cancel();
                 Err(tool_error(HostError::Cancelled.to_string()))
-            }
-            _ = tokio::time::sleep(self.call_timeout) => {
-                token.cancel();
-                Err(tool_error(format!("timed out after {} s; the operation was cancelled", self.call_timeout.as_secs_f64())))
             }
         }
     }

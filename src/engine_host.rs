@@ -4,10 +4,11 @@
 //! command IDs, tool names and JSON arguments and results cross the boundary (docs/design-policy.md
 //! section 4.3). Requests to the same working session run one at a time in the order they arrive; when
 //! the queue is full, they are refused as busy. Across working sessions, at most `--max-running` jobs run at
-//! once ([`RunSlots`]); the others wait for a free slot.
+//! once ([`RunSlots`]); the others wait for a free slot. The time limit counts from when a job starts, and a
+//! job that waits as long without starting is not run.
 
 use std::fmt;
-use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -44,8 +45,8 @@ impl RunSlots {
         }
     }
 
-    /// Waits for a free slot. `None` when `token` is cancelled first: the caller gave up or ran out of time
-    /// (the time limit counts the wait), so the job doesn't run.
+    /// Waits for a free slot. `None` when `token` is cancelled first: the caller gave up or waited too long
+    /// to start, so the job doesn't run.
     fn take(&self, token: &CancelToken) -> Option<RunSlot<'_>> {
         let mut free = self.free.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
@@ -115,6 +116,11 @@ pub enum HostError {
     Engine(String),
     /// Cancelled (nothing was changed)
     Cancelled,
+    /// Could not start within the time limit, behind the session's earlier requests or waiting for a free
+    /// slot, so it was not run
+    Waited(Duration),
+    /// Ran past the time limit and was asked to stop
+    TimedOut(Duration),
 }
 
 impl fmt::Display for HostError {
@@ -125,6 +131,12 @@ impl fmt::Display for HostError {
             HostError::Rejected(m) => write!(f, "rejected: {m}"),
             HostError::Engine(m) => f.write_str(m),
             HostError::Cancelled => f.write_str("cancelled; nothing was changed"),
+            HostError::Waited(limit) => write!(
+                f,
+                "the server stayed busy for {} s, so the request was not started; nothing was changed. Retry later",
+                limit.as_secs_f64()
+            ),
+            HostError::TimedOut(limit) => write!(f, "timed out after {} s; the operation was cancelled", limit.as_secs_f64()),
         }
     }
 }
@@ -135,6 +147,8 @@ pub struct EngineLimits {
     pub queue_depth: usize,
     pub max_documents: usize,
     pub history_bytes: usize,
+    /// How long a job may run once it starts, and how long it may wait to start (docs/design-policy.md section 5.1)
+    pub call_timeout: Duration,
 }
 
 /// Work for the executor.
@@ -154,12 +168,33 @@ enum Done {
 struct Job {
     work: Work,
     token: CancelToken,
+    start: Arc<Start>,
+    /// Told when the job starts running
+    started: oneshot::Sender<()>,
     reply: oneshot::Sender<Result<Done, HostError>>,
+}
+
+/// Whether a job started running or its caller stopped waiting for it to start. Settled once, by whichever
+/// comes first, so a caller that stops waiting knows whether the job ran.
+#[derive(Default)]
+struct Start(OnceLock<bool>);
+
+impl Start {
+    /// The executor starts the job. False when its caller already stopped waiting.
+    fn run(&self) -> bool {
+        self.0.set(true).is_ok()
+    }
+
+    /// The caller stops waiting. False when the job already started.
+    fn give_up(&self) -> bool {
+        self.0.set(false).is_ok()
+    }
 }
 
 /// The engine executor of one working session. Dropping it ends the execution thread too.
 pub struct EngineHost {
     jobs: mpsc::Sender<Job>,
+    call_timeout: Duration,
 }
 
 impl EngineHost {
@@ -167,11 +202,12 @@ impl EngineHost {
     /// The engine's file access is always confined to `roots`, and each job runs in one of the shared `slots`.
     pub fn spawn(limits: EngineLimits, roots: Arc<AutomationRoots>, slots: Arc<RunSlots>) -> std::io::Result<Self> {
         let (jobs, rx) = mpsc::channel(limits.queue_depth.max(1));
+        let call_timeout = limits.call_timeout;
         std::thread::Builder::new()
             .name("artserver-session".into())
             .stack_size(STACK_SIZE)
             .spawn(move || serve(rx, &limits, &roots, &slots))?;
-        Ok(Self { jobs })
+        Ok(Self { jobs, call_timeout })
     }
 
     /// Runs `steps` in order and returns each step's result. Setting `token` asks the engine to stop.
@@ -191,23 +227,47 @@ impl EngineHost {
         }
     }
 
+    /// Hands `work` to the executor's thread. Waiting to start, behind the session's earlier requests or for a
+    /// free slot, has a time limit of its own, so a job that starts has its whole time limit to run.
     async fn submit(&self, work: Work, token: CancelToken) -> Result<Done, HostError> {
         let (reply, answer) = oneshot::channel();
-        self.jobs.try_send(Job { work, token, reply }).map_err(|e| match e {
+        let (started, has_started) = oneshot::channel();
+        let start = Arc::new(Start::default());
+        let job = Job {
+            work,
+            token: token.clone(),
+            start: start.clone(),
+            started,
+            reply,
+        };
+        self.jobs.try_send(job).map_err(|e| match e {
             TrySendError::Full(_) => HostError::Busy,
             TrySendError::Closed(_) => HostError::Stopped,
         })?;
-        answer.await.map_err(|_| HostError::Stopped)?
+        // A job that ends without starting (cancelled) drops `started`, and its answer says so
+        if tokio::time::timeout(self.call_timeout, has_started).await.is_err() && start.give_up() {
+            token.cancel();
+            return Err(HostError::Waited(self.call_timeout));
+        }
+        match tokio::time::timeout(self.call_timeout, answer).await {
+            Ok(answer) => answer.map_err(|_| HostError::Stopped)?,
+            Err(_) => {
+                token.cancel();
+                Err(HostError::TimedOut(self.call_timeout))
+            }
+        }
     }
 }
 
 fn serve(mut jobs: mpsc::Receiver<Job>, limits: &EngineLimits, roots: &Arc<AutomationRoots>, slots: &RunSlots) {
     let mut session = Session::new();
     while let Some(job) = jobs.blocking_recv() {
-        let result = match slots.take(&job.token) {
-            // Don't run a request the caller gave up on while it was waiting, in the queue or for a slot
+        // Don't run a request the caller gave up on while it was waiting, in the queue or for a slot
+        let slot = slots.take(&job.token).filter(|_| job.start.run());
+        let result = match slot {
             None => Err(HostError::Cancelled),
             Some(slot) => {
+                let _ = job.started.send(());
                 let result = file_access::confine(Some(roots), || {
                     cancel::scope(&job.token, None, || match &job.work {
                         Work::Steps(steps) => run_steps(&mut session, steps, limits).map(Done::Steps),
@@ -287,16 +347,17 @@ mod tests {
     }
 
     fn host_with_slots(dir: &tempfile::TempDir, max_documents: usize, slots: Arc<RunSlots>) -> EngineHost {
-        spawn_host(dir, 4, max_documents, slots)
+        spawn_host(dir, 4, max_documents, slots, Duration::from_secs(60))
     }
 
-    fn spawn_host(dir: &tempfile::TempDir, queue_depth: usize, max_documents: usize, slots: Arc<RunSlots>) -> EngineHost {
+    fn spawn_host(dir: &tempfile::TempDir, queue_depth: usize, max_documents: usize, slots: Arc<RunSlots>, call_timeout: Duration) -> EngineHost {
         let roots = AutomationRoots::new(Some(dir.path()), None).unwrap().unwrap();
         EngineHost::spawn(
             EngineLimits {
                 queue_depth,
                 max_documents,
                 history_bytes: 8 << 20,
+                call_timeout,
             },
             roots,
             slots,
@@ -311,7 +372,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let slots = Arc::new(RunSlots::new(1));
         let held = slots.take(&CancelToken::new()).unwrap();
-        let host = Arc::new(spawn_host(&dir, 1, 2, slots.clone()));
+        let host = Arc::new(spawn_host(&dir, 1, 2, slots.clone(), Duration::from_secs(60)));
         let run = |host: Arc<EngineHost>| tokio::spawn(async move { host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await });
         let first = run(host.clone());
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -322,6 +383,70 @@ mod tests {
         drop(held);
         assert!(first.await.unwrap().is_ok());
         assert!(second.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_job_that_cannot_start_in_time_is_not_run() {
+        // With the only slot held past the time limit, the job is refused as waited, and it never runs: with one
+        // document allowed, a document can still be made once the slot is free
+        let dir = tempfile::tempdir().unwrap();
+        let slots = Arc::new(RunSlots::new(1));
+        let host = spawn_host(&dir, 4, 1, slots.clone(), Duration::from_millis(300));
+        let held = slots.take(&CancelToken::new()).unwrap();
+        let err = host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await.unwrap_err();
+        assert!(matches!(err, HostError::Waited(_)), "{err}");
+        assert!(err.to_string().contains("not started"), "{err}");
+        drop(held);
+        host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await.unwrap();
+    }
+
+    /// An executor whose thread the test plays itself: it gets the jobs as the session's thread would.
+    fn played_host(call_timeout: Duration) -> (EngineHost, mpsc::Receiver<Job>) {
+        let (jobs, rx) = mpsc::channel(4);
+        (EngineHost { jobs, call_timeout }, rx)
+    }
+
+    #[tokio::test]
+    async fn the_time_limit_counts_from_the_start() {
+        // Waiting to start and running each take most of the time limit, together more than it: the job succeeds
+        let (host, mut jobs) = played_host(Duration::from_millis(400));
+        let executor = tokio::spawn(async move {
+            let job = jobs.recv().await.unwrap();
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            assert!(job.start.run());
+            let _ = job.started.send(());
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            let _ = job.reply.send(Ok(Done::Steps(vec![json!("done")])));
+        });
+        let results = host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await.unwrap();
+        assert_eq!(results, vec![json!("done")]);
+        executor.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_job_past_the_time_limit_is_asked_to_stop() {
+        let (host, mut jobs) = played_host(Duration::from_millis(200));
+        let executor = tokio::spawn(async move {
+            let job = jobs.recv().await.unwrap();
+            assert!(job.start.run());
+            let _ = job.started.send(());
+            tokio::time::sleep(Duration::from_millis(400)).await;
+            job.token.is_cancelled()
+        });
+        let err = host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await.unwrap_err();
+        assert!(matches!(err, HostError::TimedOut(_)), "{err}");
+        assert!(executor.await.unwrap(), "the engine is asked to stop");
+    }
+
+    #[tokio::test]
+    async fn a_job_whose_caller_stopped_waiting_never_starts() {
+        // Nobody takes the job within the time limit; the executor that comes to it later can't start it
+        let (host, mut jobs) = played_host(Duration::from_millis(200));
+        let err = host.run(vec![Step::new("file.new", json!({}))], CancelToken::new()).await.unwrap_err();
+        assert!(matches!(err, HostError::Waited(_)), "{err}");
+        let job = jobs.recv().await.unwrap();
+        assert!(!job.start.run(), "the caller already stopped waiting");
+        assert!(job.token.is_cancelled());
     }
 
     #[test]

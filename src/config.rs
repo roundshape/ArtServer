@@ -41,7 +41,8 @@ pub struct Cli {
     #[arg(long, env = "ARTSERVER_SESSION_IDLE_SECS", default_value_t = Limits::default().session_idle.as_secs())]
     pub session_idle_secs: u64,
 
-    /// Time limit for one tool call (seconds). Past it, the engine is asked to cancel
+    /// Time limit for one tool call once it starts running (seconds). Past it, the engine is asked to cancel. A call
+    /// that can't start within as long, behind the session's earlier requests or for a free slot, is not run
     #[arg(long, env = "ARTSERVER_CALL_TIMEOUT_SECS", default_value_t = Limits::default().call_timeout.as_secs())]
     pub call_timeout_secs: u64,
 
@@ -65,7 +66,7 @@ pub struct Cli {
     #[arg(long, env = "ARTSERVER_RENDER_THREADS", default_value_t = Limits::default().render_threads)]
     pub render_threads: u16,
 
-    /// Jobs running at once across all working sessions; more wait for a free slot within their time limit
+    /// Jobs running at once across all working sessions; more wait for a free slot, up to the time limit
     /// (default: CPU cores ÷ (rendering threads + 1), at least 1)
     #[arg(long, env = "ARTSERVER_MAX_RUNNING")]
     pub max_running: Option<usize>,

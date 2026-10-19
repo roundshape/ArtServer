@@ -32,6 +32,7 @@
   - 2026-10-19 Opened the fourth batch: the commands decided individually (section 4.7; chapter 11)
   - 2026-10-19 Decided not to extend `export_document` with the closed exports' features for now (section 4.7; chapter 11)
   - 2026-10-19 Decided not to work on CJK fonts on Linux for now (section 7.3; chapter 11; section 13.2)
+  - 2026-10-19 The time limit counts from when a request starts, and waiting to start has a limit of its own (sections 5.1, 5.3)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -368,6 +369,7 @@ Categories for opening commands (initial plan; each command is reviewed when it 
 
 - HTTP requests are accepted with async processing, and heavy work runs on the session's thread. Health checks etc. can be answered even during rendering.
 - Cancellation is accepted even during execution (using the engine's cooperative cancellation). With Streamable HTTP, cancellation happens when the client closes the response stream.
+- **Time limit (2026-10-19, agreed with the project owner)**: the time limit (`--call-timeout-secs`, default 60) counts from when a request starts running. Waiting to start, in the queue or for a free slot (section 5.3), has a limit of the same length: a request that can't start within it is not run, and the AI is told that nothing was changed and to retry later. Before, one limit counted from the call, so a request could run out of time before it started, or start with seconds left and be stopped partway, and the same message hid whether it had run. Whether a request started or its caller stopped waiting is settled once, by whichever comes first, so the two can't be confused. A call can so take up to twice the time limit before it answers; a separate setting for the wait was not added, to keep the settings few.
 
 ### 5.2 Differences from VectorCraft
 
@@ -380,7 +382,7 @@ Categories for opening commands (initial plan; each command is reviewed when it 
 | Problem | Measure |
 |---|---|
 | Settings shared across the whole process (color settings, ICC profiles, font DB, plugin registration, hyphenation exceptions, etc.) affect everyone if one session changes them | Do not allow commands that change them |
-| Each export creates up to 8 rendering threads, so concurrent exports make the thread count explode | Limit the number of rendering threads (`--render-threads`, default 2), and set a global limit on concurrent heavy operations: **implemented 2026-10-19** as `--max-running` (`ARTSERVER_MAX_RUNNING`), the jobs the engine runs at once across all working sessions, light ones included; others wait for a free slot, and the wait counts toward the time limit of the call. The default is the CPU cores ÷ (rendering threads + 1), at least 1 |
+| Each export creates up to 8 rendering threads, so concurrent exports make the thread count explode | Limit the number of rendering threads (`--render-threads`, default 2), and set a global limit on concurrent heavy operations: **implemented 2026-10-19** as `--max-running` (`ARTSERVER_MAX_RUNNING`), the jobs the engine runs at once across all working sessions, light ones included; others wait for a free slot, up to the time limit (section 5.1). The default is the CPU cores ÷ (rendering threads + 1), at least 1 |
 | Undo history alone uses up to 1GiB per document | Set limits on the number of sessions, the number of documents, and history bytes |
 | The first font lookup scans all fonts, and everyone waits during it | Scan in advance at startup |
 | The glyph cache shares a single lock and may become contended | Check in the Phase 3 load tests |

@@ -851,3 +851,29 @@ The closed exports and their setup stay closed; what real use shows to be missin
 The project owner decided not to work on CJK fonts (such as Japanese) on Linux for now (design policy section 7.3): Linux is expected to have few users. An operator can already provide them, by installing them in the server's OS or with `--font-dirs`; embedding fonts in the build is not done. Revisited when users on Linux appear.
 
 - Design policy section 7.3, chapter 11 (Phase 2's remaining work is now the verification with real files) and section 13.2 #5.
+
+## 2026-10-19 The time limit counts from when a request starts
+
+### Policy
+
+The time limit of a call (`--call-timeout-secs`, default 60) counted from the moment the tool was called. It so included the wait behind the working session's earlier requests and for a free slot of `--max-running`: a request could run out of time without starting, or start with seconds left and be stopped partway, and the AI got the same "timed out" message either way, so it couldn't tell whether the document had changed.
+
+Of three options (A: separate the wait from the run, with the same length for both; B: as A, with a setting of its own for the wait; C: only separate the messages), the project owner chose A. The settings stay as they are; a call can take up to twice the time limit before it answers.
+
+### What was done
+
+- `src/engine_host.rs`: the time limits moved from the tools into the executor. `submit` waits for the job to start, up to the time limit; once it starts, it waits for the result, up to the time limit again. A job that doesn't start in time is not run, and the AI is told "the server stayed busy for 60 s, so the request was not started; nothing was changed. Retry later"; one that runs past the limit gets "timed out after 60 s; the operation was cancelled" as before. Whether the job started or its caller stopped waiting is settled once (`Start`, a `OnceLock`): the executor's thread claims it after taking a slot, the caller when it stops waiting, and whichever comes first wins, so a job is never run after its caller was told it wasn't.
+- `src/tools.rs`: the tools keep only the client's cancellation. `src/lib.rs`, `src/config.rs`: the time limit goes to the executor with the other engine limits.
+- Tests (unit): a job that can't start in time is refused and never runs (with one document allowed, a document can still be made afterwards); with an executor the test plays itself, a job that waits 250 ms and runs 250 ms under a 400 ms limit succeeds, one that runs past the limit is asked to stop, and an executor that comes to a job after its caller stopped waiting can't start it.
+- README (both languages) and design policy sections 5.1 and 5.3.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 77 passed (55 unit, 22 E2E). A first test, a real export after a long wait for a slot, would have passed under the old limit too (the export takes milliseconds), so it was replaced with the played executor |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+### Next steps
+
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): real .ai and PDF exports, whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing

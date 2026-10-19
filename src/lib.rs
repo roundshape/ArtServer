@@ -60,6 +60,7 @@ impl App {
             queue_depth: limits.queue_depth,
             max_documents: limits.max_documents,
             history_bytes: limits.history_bytes,
+            call_timeout: limits.call_timeout,
         };
         let slots = Arc::new(RunSlots::new(limits.max_running));
         let sessions = Arc::new(Sessions::new(limits.max_sessions, limits.session_idle, engine_limits, roots, slots));
@@ -77,7 +78,6 @@ impl App {
         let factory_files = files.clone();
         let public_url: Option<Arc<str>> = config.public_url.as_deref().map(Arc::from);
         let factory_public_url = public_url.clone();
-        let call_timeout = limits.call_timeout;
         let max_upload_bytes = limits.max_upload_bytes;
         let mcp = StreamableHttpService::new(
             move || {
@@ -85,7 +85,6 @@ impl App {
                     factory_sessions.clone(),
                     factory_files.clone(),
                     factory_public_url.clone(),
-                    call_timeout,
                     max_upload_bytes,
                 ))
             },

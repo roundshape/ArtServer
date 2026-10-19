@@ -143,6 +143,7 @@ mod tests {
                 queue_depth: 2,
                 max_documents: 2,
                 history_bytes: 1 << 20,
+                call_timeout: Duration::from_secs(60),
             },
             roots,
             Arc::new(RunSlots::new(2)),

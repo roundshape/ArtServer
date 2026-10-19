@@ -194,13 +194,13 @@ Coordinates are in points (1/72 inch), with the origin at the artboard's top-lef
 | `--allowed-origins` | `ARTSERVER_ALLOWED_ORIGINS` | none | Origins to accept. If empty, every request with an Origin header (from a browser) is refused |
 | `--max-sessions` | `ARTSERVER_MAX_SESSIONS` | 8 | Number of working sessions held at once |
 | `--session-idle-secs` | `ARTSERVER_SESSION_IDLE_SECS` | 1800 | Seconds before an unused session is discarded |
-| `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | Time limit for one call |
+| `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | Time limit for one call, counted from when it starts running. A call that can't start within as long (behind the working session's earlier requests, or waiting for a free slot) is not run, and says so |
 | `--max-body-bytes` | `ARTSERVER_MAX_BODY_BYTES` | 16777216 | Maximum request body size |
 | `--queue-depth` | `ARTSERVER_QUEUE_DEPTH` | 8 | Requests one working session can have waiting in its queue; more are refused as busy |
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | Number of documents open in one session |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | Undo history limit per document |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | Rendering threads per export |
-| `--max-running` | `ARTSERVER_MAX_RUNNING` | CPU cores ÷ (rendering threads + 1), at least 1 | Requests the engine runs at once across all working sessions. Others wait for a free slot; the wait counts toward the time limit of one call |
+| `--max-running` | `ARTSERVER_MAX_RUNNING` | CPU cores ÷ (rendering threads + 1), at least 1 | Requests the engine runs at once across all working sessions. Others wait for a free slot, up to the time limit of one call |
 | `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | Seconds large exports and uploaded files are kept |
 | `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | Total size limit of the kept exports and uploaded files (kept in memory) |
 | `--max-upload-mib` | `ARTSERVER_MAX_UPLOAD_MIB` | 64 | Size limit of one uploaded file |
