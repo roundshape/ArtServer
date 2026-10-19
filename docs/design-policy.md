@@ -20,6 +20,7 @@
   - 2026-10-19 Updated the status of Phase 2 to in progress (chapter 11)
   - 2026-10-19 Decided to leave "VectorCraft" in exported files as is (section 13.2)
   - 2026-10-19 Recorded the trademark check for "ArtServer" (chapter 9, section 13.2)
+  - 2026-10-19 Implemented upload for import, and recorded the idea of a server-side image library (sections 4.6, 4.7, 6.3, 12.4, 13.2; chapter 11)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -199,7 +200,7 @@ The latest MCP specification (2026-07-28 version) changed the shape of Streamabl
 - One handle corresponds to one engine Session. One working session can handle multiple documents (an engine feature).
 - When processes are separated in the future, mapping the handle to an HTTP header with `x-mcp-header` would let a load balancer route requests to workers without reading the body. Not implemented now.
 
-### 4.6 Passing large data (export implemented 2026-10-18; upload for import not implemented)
+### 4.6 Passing large data (export implemented 2026-10-18; upload for import implemented 2026-10-19)
 
 Agreed with the project owner on 2026-10-18. Tool results go straight into the AI's conversation, so the current approach of putting file contents into the response as Base64 (section 6.3) does not suit large data. Claude Code also has a limit on MCP tool output size. For import, the AI has to write out the file's Base64 as an argument, which is not realistic for large files.
 
@@ -209,7 +210,7 @@ Agreed with the project owner on 2026-10-18. Tool results go straight into the A
 |---|---|
 | What the AI looks at (result summaries, document state, small PNG previews, small SVGs) | In the response (the current approach) |
 | What is delivered as a file (PDF, `.ai`, `.vectorcraft`, large PNG/SVG) | Stored temporarily on the server, and an ID and URL are returned. The file itself is downloaded through an HTTP endpoint separate from MCP |
-| Import | Small SVGs are passed as an argument through the current `import_svg`. Anything else is sent to an upload endpoint, and the received ID is passed to the import tool |
+| Import | Small SVGs are passed as an argument through `import_svg`. Anything else is sent to an upload URL that the `upload_create` tool makes, and the upload's ID is passed to `open_upload` or `place_upload` (implemented 2026-10-19; details below) |
 
 - **Which way to return**: By default it is decided automatically by size, and the caller can also specify it with a tool argument. The threshold is based on the capacity of the AI's conversation, roughly tens of KB of text. For PNG, think in pixel count, and only preview-sized images go in the response.
 - **Keep the response shape the same**: In both cases, always return a summary such as format, size, page count and warnings. The only difference is contents versus URL.
@@ -235,6 +236,20 @@ Agreed with the project owner on 2026-10-18. Tool results go straight into the A
 
 - **Authentication revisited (2026-10-18, the project owner's decision)**: At first the same Bearer token as MCP was required, but opening the URL in a browser gave `unauthorized`. Browsers and clients that cannot run curl (such as Claude Desktop) could not retrieve files, and the AI also had to be told where the token was, so we switched to expiring URLs that need no token. The risk is reduced by the unguessable ID (256 bits), the short expiry (10 minutes by default), deletion when the working session closes, and the premise that users are confined to a single organization (section 1.1). URLs are also shown in the AI conversation, so the README states clearly that anyone who knows the URL can retrieve the file until it expires. Deleting a file after one download was not adopted, because link prefetching could delete it.
 
+
+**Decided during the implementation of uploads (2026-10-19, agreed with the project owner)**
+
+| Item | Details |
+|---|---|
+| Approach | A URL made by a tool (option A of the four compared: a URL from a tool, an upload endpoint that takes the Bearer token, a fixed inbox folder, fetching from a web URL). `upload_create` returns a URL that takes one file; the AI sends it with `curl -T`, or the user opens the URL in a browser and chooses the file. The AI needs no token, and clients without a shell can still send files |
+| Endpoint | `PUT /uploads/{id}` takes the raw bytes as the body. **No token is required; the ID in the URL is the key**, as for downloads. One file per URL (a second PUT gets 409). Host and Origin are checked as for `/files/`; an Origin also passes when it is this server's own (that of the request, or of `--public-url`), because the browser page sends from there |
+| Browser page | `GET /uploads/{id}` shows a page with a file chooser. Its script (`/uploads/upload.js`, served by ArtServer) sends the file with a PUT to the same URL. The page may run only that script and talk only to this server (`Content-Security-Policy`) |
+| Formats | PDF (including Illustrator `.ai` files saved with PDF compatibility), SVG, PNG and JPEG, **told from the contents** (the first bytes), not from the name, because the engine also picks its reader from the contents. Anything else gets 415. EPS and other PostScript, compressed SVG, PSD and the native format are not accepted yet. `import_svg` now checks its argument the same way |
+| Limits | One file up to `--max-upload-mib` (default 64 MiB; a bigger body gets 413). Uploads share the file store with exports: the same total limit (`--max-file-mib`), the same expiry (`--file-ttl-secs`, counted again from when the file arrives), at most 8 per working session (counted apart from exports), and deletion when the working session closes |
+| Using the file | `open_upload` opens it as a new document (`document.open`), and `place_upload` places it into the active document (`file.place`). ArtServer passes the contents as data (`name` and `dataBase64`), so the engine still never touches a file. Placed files are always embedded (`link: false`). Only the working session that made the upload can use it, any number of times until it expires. Both commands are ArtServer-only in the allowlist and accept only data whose name ends in svg, pdf, ai, png or jpg |
+| Saving and resuming | ArtServer's PDF exports carry the native document as editing data, so sending such a PDF back and opening it restores the document as it was (`"restored": true`; checked by an E2E test). This serves for saving work and continuing it later, without a separate save format |
+
+- **Future: a server-side image library.** The project owner's long-term idea is to keep images in a library (a database) on the server and place them from there. `place_upload` takes the ID of a temporary upload now; it can later take the ID of a library item as well. Either way ArtServer reads the bytes and passes them to the engine as data, so the policy of not letting the engine touch files stays. Not scheduled.
 ### 4.7 Tool structure: using VectorCraft's tools through ArtServer's Backend (implemented 2026-10-18)
 
 The approach agreed with the project owner on 2026-10-18. On the same day, it replaced the plan of "hand-written tools combined with a generic tool with an allowlist".
@@ -296,9 +311,9 @@ Categories for opening commands (initial plan; each command is reviewed when it 
 | Category | Targets | Reason |
 |---|---|---|
 | Not opened | `prefs`, `plugin`, `script`, `help`, `shortcutSet`, `action`, `command`, `print`, `links`, `library`, `view`, `file` (except `file.new`), `color.loadProfile`/`color.removeProfile`, `text.addFontFiles`/`text.findFontFiles`, `edit.colorSettings`/`edit.assignProfile`, saving and loading of presets and libraries (`swatch.library.*`, `graphicStyle.saveLibrary`, etc.) | Changes process-wide state, touches the file system, runs other commands, is meaningful only on screen, or is not exposed for brand reasons (section 6.2) |
-| Consolidated into ArtServer's tools | Creating and importing documents, export (`document.export*` etc.; uses the delivery in section 4.6) | ArtServer handles the format restrictions and the passing of large data |
+| Consolidated into ArtServer's tools | Creating and importing documents, placing files (`file.place`, through `place_upload`), export (`document.export*` etc.; uses the delivery in section 4.6) | ArtServer handles the format restrictions and the passing of large data |
 | Opened step by step | The commands used by VectorCraft's tools (above), and those that edit only within the document, such as `object`, `path`, `select`, `edit`, `layer`, `paint`, `stroke`, `transparency`, `appearance`, `gradient`, `pattern`, `swatch`, `graphicStyle`, `brush`, `symbol`, `artboard`, `guide`, `type`, `text`, `shape`, `shapeBuilder`, `livePaint`, `perspective`, `effect`, `graph`, `variable`, `dataset`, `recolor`, `colorTheme`, `dimension`, `attributes`. Anything that falls under "Not opened" above is excluded | Self-contained within the document |
-| Decided individually later | `imageTrace` (heavy processing, takes images as input), `file.place` (placing images etc.; requires the upload in section 4.6), `clipboard`, `webExport`, `assets`, `svgInteractivity`, `css`, `pdf`, `flattener` | Handles external data, produces output, or is heavy processing |
+| Decided individually later | `imageTrace` (heavy processing, takes images as input), `clipboard`, `webExport`, `assets`, `svgInteractivity`, `css`, `pdf`, `flattener` | Handles external data, produces output, or is heavy processing |
 
 - Read-only commands (about 160; those marked `query` in the engine) are candidates to open early.
 
@@ -377,7 +392,7 @@ Categories for opening commands (initial plan; each command is reviewed when it 
 
 ### 6.3 File access
 
-- **The MVP does not use the file system.** Both input and output are passed as Base64 (the engine's export returns Base64 when the path is omitted). In Phase 2, large data moves to the approach in section 4.6.
+- **The MVP does not use the file system.** Both input and output are passed as Base64 (the engine's export returns Base64 when the path is omitted). In Phase 2, large data moves to the approach in section 4.6 (exports since 2026-10-18, uploads since 2026-10-19).
 - If path specification is opened in the future:
   - Apply the engine's file restrictions with a per-session directory as the read/write root.
   - Always build absolute paths on the ArtServer side, because the engine resolves relative paths against the server's current directory.
@@ -513,7 +528,7 @@ TLS (terminated at a reverse proxy), multiple users and permission management, p
 |---|---|---|
 | 0 | Investigation of VectorCraft, choice of approach | Done (Option A-2 adopted) |
 | 1 | MVP (chapter 10) | Done (implemented 2026-10-17; connection from Claude Code verified 2026-10-18; `cargo deny` / `cargo about` introduced). Items not yet verified are in section 13.2 |
-| 2 | Feature expansion and compatibility verification (CJK fonts such as Japanese, images, layers, transparency, path operations, verification with real files). Process isolation is not built first (revisit if a condition in section 12.4 applies) | In progress (since 2026-10-18). Done: VectorCraft's tools through GuardedBackend (section 4.7), text and fonts (`list_fonts`, `--font-dirs`), the fix for the weights of Japanese fonts in SVG (chapter 8), URL delivery of exports (section 4.6). Remaining: upload for import (section 4.6), placing images, opening more commands (section 4.7), CJK fonts on Linux (section 7.3), verification with real files |
+| 2 | Feature expansion and compatibility verification (CJK fonts such as Japanese, images, layers, transparency, path operations, verification with real files). Process isolation is not built first (revisit if a condition in section 12.4 applies) | In progress (since 2026-10-18). Done: VectorCraft's tools through GuardedBackend (section 4.7), text and fonts (`list_fonts`, `--font-dirs`), the fix for the weights of Japanese fonts in SVG (chapter 8), URL delivery of exports (section 4.6), upload for import (opening PDF, .ai, SVG, PNG and JPEG, and placing images; section 4.6). Remaining: opening more commands (section 4.7), CJK fonts on Linux (section 7.3), verification with real files |
 | 3 | Productization (REST API, multiple users, process isolation (chapter 12), job persistence, Docker, monitoring, threat analysis and load tests) | Not started |
 
 ---
@@ -573,7 +588,7 @@ Start as soon as any of the following becomes a real requirement.
 - Abnormal engine termination or long-running work must not affect other users.
 - The number of concurrent sessions or the load grows, and resources need to be controlled per user or per session.
 - Features where isolation matters a lot are exposed, such as I/O by file path or fonts brought in by users.
-- **Import of untrusted external files (SVG / PDF / EPS, etc.) is exposed.** Import is the part most likely to crash the process.
+- **Import of files from users who are not trusted is exposed.** Import is the part most likely to crash the process. Import has been open since 2026-10-19 for the users section 1.1 assumes (one organization, trusted), with limits on size, time and formats (section 4.6). It must not be offered to users who are not trusted before process isolation.
 - **A feature that switches color settings per job becomes necessary** (section 12.5). In this case, revisit without waiting for Phase 3.
 
 When migrating, test with emphasis on "the front end keeps running when a worker crashes", "a session cannot touch the state or files of other sessions", and "a worker can be stopped when it exceeds its limits".
@@ -621,5 +636,5 @@ When migrating, test with emphasis on "the front end keeps running when a worker
 | 7 | Checking trademark conflicts for "ArtServer" → **Done (2026-10-19): no conflict found**. US (USPTO): only dead marks (ARTSERVER, abandoned 1997; ARTSERVE, cancelled). Japan (J-PlatPat): no ARTSERVER or アートサーバー; the closest, AUTO SERVER (class 9, including software), is not similar (different first sound and meaning). EU, WIPO and other countries were not checked. Registering "ArtServer" as a trademark would need a patent attorney's review | Before publication |
 | 8 | Whether color settings need to be switched per job (if so, consider moving process isolation earlier; section 12.4) | Phase 2 |
 | 9 | Isolation unit and method (section 12.3) | When Phase 3 starts |
-| 11 | Passing large data (section 4.6) → **Export implemented (2026-10-18)**. Thresholds are SVG 32KB and PNG 256KB, and PDF is always a URL. Retrieval uses expiring URLs that need no token (that Claude Code's AI can fetch files with curl was verified with the token-required version). Download in a browser is also verified. **Not implemented**: returning a resource link, upload for import | Phase 2 |
+| 11 | Passing large data (section 4.6) → **Export implemented (2026-10-18)**. Thresholds are SVG 32KB and PNG 256KB, and PDF is always a URL. Retrieval uses expiring URLs that need no token (that Claude Code's AI can fetch files with curl was verified with the token-required version). Download in a browser is also verified. Upload for import **implemented (2026-10-19)**: `upload_create` → PUT → `open_upload` / `place_upload`. **Not implemented**: returning a resource link | Phase 2 |
 | 12 | Tool structure (section 4.7) → **Implemented (2026-10-18)**. The path check now also looks at the value's type. `call_tool` results are converted to MCP results without structuredContent. The descriptions of the 16 exposed tools contain no "VectorCraft" wording, so no replacement was needed (verified by tests). **Not yet verified**: confirming the command count by running the engine (about 760 is a static count), and whether Claude Code's AI uses VectorCraft's tools and the generic tools correctly | Phase 2 |

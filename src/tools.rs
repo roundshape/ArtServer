@@ -1,7 +1,7 @@
 //! MCP tool definitions.
 //!
-//! ArtServer's tools (working sessions, creating, importing and exporting documents, the font list) are
-//! defined here and turned into sequences of engine commands. Other editing is done by VectorCraft's tools,
+//! ArtServer's tools (working sessions, creating, importing and exporting documents, uploads, the font list)
+//! are defined here and turned into sequences of engine commands. Other editing is done by VectorCraft's tools,
 //! published as they are and run on GuardedBackend in the working session's executor
 //! (docs/design-policy.md section 4.7).
 //!
@@ -29,8 +29,9 @@ use vectorcraft_mcp::ToolResult;
 
 use crate::auth::Principal;
 use crate::engine_host::{HostError, Step};
-use crate::files::{FileStore, StoredFile, file_name};
+use crate::files::{FileStore, StoredFile, base_url, file_name};
 use crate::session::{SessionError, Sessions};
+use crate::uploads::{self, Format};
 
 const INSTRUCTIONS: &str = "ArtServer edits vector documents. Call session_create first and pass the returned `session` \
 to every other tool. Create a document with document_new (or import_svg), draw and edit with the dedicated tools \
@@ -40,7 +41,10 @@ and run it with command_run (or several with command_batch); only the commands c
 Pass object ids explicitly as `ids` rather than relying on the selection. Coordinates are in points (1/72 inch), \
 origin at the artboard's top-left, y down. list_fonts tells which font families this server has. Large exports \
 come back as a download URL valid for a few minutes: open it in a browser or fetch it with an HTTP GET (for example \
-`curl -o out.pdf <url>`); no token is needed, and anyone with the URL can download the file until it expires.";
+`curl -o out.pdf <url>`); no token is needed, and anyone with the URL can download the file until it expires. To use a \
+file the user has (PDF, .ai, SVG, PNG or JPEG), call upload_create, send the file to the returned URL with an HTTP PUT \
+(for example `curl -T logo.png '<url>'`) or ask the user to open the URL in a browser, then open it as a document with \
+open_upload or put it into the active document with place_upload.";
 
 /// The VectorCraft tools ArtServer publishes (docs/design-policy.md section 4.7).
 const VECTORCRAFT_TOOLS: &[&str] = &[
@@ -82,9 +86,11 @@ type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<CallToolResponse, Error
 pub struct ArtServer {
     sessions: Arc<Sessions>,
     files: Arc<FileStore>,
-    /// ArtServer's URL as seen from outside (--public-url). Used for export URLs
+    /// ArtServer's URL as seen from outside (--public-url). Used for export and upload URLs
     public_url: Option<Arc<str>>,
     call_timeout: Duration,
+    /// Size limit of one uploaded file, told to the AI with the upload URL
+    max_upload_bytes: usize,
     tool_router: ToolRouter<Self>,
 }
 
@@ -117,6 +123,60 @@ pub struct ImportSvgArgs {
     pub svg: String,
     /// Document name (default "imported").
     pub name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UploadCreateArgs {
+    /// Session handle returned by session_create.
+    pub session: String,
+    /// The file's name, such as logo.ai. It becomes the document's title, and a .ai name keeps an Illustrator
+    /// file's meaning. The format itself is told from the contents.
+    pub name: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct OpenUploadArgs {
+    /// Session handle returned by session_create.
+    pub session: String,
+    /// The `upload` returned by upload_create, once the file has been sent.
+    pub upload: String,
+    /// PDF and .ai only: the pages to open, such as "1-3, 5" (default all; one artboard each).
+    pub pages: Option<String>,
+    /// PDF and .ai only: text comes in as editable text in the file's fonts (default), or as outlines.
+    pub text_as: Option<TextAs>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TextAs {
+    Text,
+    Outlines,
+}
+
+impl TextAs {
+    fn as_str(self) -> &'static str {
+        match self {
+            TextAs::Text => "text",
+            TextAs::Outlines => "outlines",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlaceUploadArgs {
+    /// Session handle returned by session_create.
+    pub session: String,
+    /// The `upload` returned by upload_create, once the file has been sent.
+    pub upload: String,
+    /// Centre of the placed art as [x, y] in points (default: the centre of the first artboard).
+    pub at: Option<[f64; 2]>,
+    /// Fit the art inside [x, y, width, height] in points, keeping its aspect ratio (wins over `at`).
+    pub rect: Option<[f64; 4]>,
+    /// PDF and .ai only: the page to place (default 1).
+    pub page: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -194,7 +254,13 @@ impl Delivery {
 }
 
 impl ArtServer {
-    pub fn new(sessions: Arc<Sessions>, files: Arc<FileStore>, public_url: Option<Arc<str>>, call_timeout: Duration) -> Self {
+    pub fn new(
+        sessions: Arc<Sessions>,
+        files: Arc<FileStore>,
+        public_url: Option<Arc<str>>,
+        call_timeout: Duration,
+        max_upload_bytes: usize,
+    ) -> Self {
         let mut tool_router = Self::tool_router();
         for tool in vectorcraft_tools() {
             tool_router.add_route(ToolRoute::new_dyn(tool.clone(), call_vectorcraft_tool));
@@ -204,8 +270,23 @@ impl ArtServer {
             files,
             public_url,
             call_timeout,
+            max_upload_bytes,
             tool_router,
         }
+    }
+
+    /// Checks that `handle` is a working session of the request's principal (which also counts as using it).
+    fn check_session(&self, parts: &Parts, handle: &str) -> Result<(), ErrorData> {
+        let owner = principal(parts)?;
+        self.sessions.get(handle, &owner).map_err(session_error).map(|_| ())
+    }
+
+    /// The file sent for `upload` of working session `session`, as the engine takes it: a name with the
+    /// extension of its format, and its contents in Base64.
+    fn uploaded(&self, session: &str, upload: &str) -> Result<(String, String), CallToolResult> {
+        let file = self.files.upload(upload, session).map_err(|e| tool_error(e.to_string()))?;
+        let name = uploads::engine_name(&file.name, file.mime).ok_or_else(|| tool_error("the uploaded file has no known format".to_string()))?;
+        Ok((name, base64::engine::general_purpose::STANDARD.encode(&file.data)))
     }
 
     /// Runs `steps` in working session `handle`. A failed tool run comes back as `Err(CallToolResult)`
@@ -270,11 +351,12 @@ impl ArtServer {
         }
     }
 
-    /// The part of an export URL before /files/: --public-url if given, else the URL of the ArtServer this request reached.
-    fn download_base(&self, parts: &Parts) -> String {
+    /// The part of an export or upload URL before /files/ or /uploads/: --public-url if given, else the URL of the
+    /// ArtServer this request reached.
+    fn public_base(&self, parts: &Parts) -> String {
         match &self.public_url {
             Some(url) => url.to_string(),
-            None => base_url(parts),
+            None => base_url(&parts.headers),
         }
     }
 
@@ -305,7 +387,7 @@ impl ArtServer {
             "bytes": size,
             "warnings": exported.get("warnings").cloned().unwrap_or(json!([])),
             "download": {
-                "url": format!("{}{path}", self.download_base(parts)),
+                "url": format!("{}{path}", self.public_base(parts)),
                 "path": path,
                 "name": name,
                 "expiresInSeconds": deposit.expires_in.as_secs(),
@@ -356,12 +438,90 @@ impl ArtServer {
         Extension(parts): Extension<Parts>,
         ct: CancellationToken,
     ) -> Result<CallToolResult, ErrorData> {
+        // The engine tells formats from the contents, so anything but SVG would reach another reader
+        if Format::sniff(a.svg.as_bytes()) != Some(Format::Svg) {
+            return Ok(tool_error("`svg` must be SVG markup".to_string()));
+        }
         let stem = a.name.as_deref().unwrap_or("imported");
         let params = json!({
             "name": format!("{stem}.svg"),
             "dataBase64": base64::engine::general_purpose::STANDARD.encode(a.svg.as_bytes()),
         });
         self.exec_one(&parts, &a.session, Step::new("document.open", params), &ct).await
+    }
+
+    #[tool(
+        description = "Get a URL to send a file to this server: PDF (including Illustrator .ai files saved with PDF \
+compatibility), SVG, PNG or JPEG. Send the file's raw bytes to it with an HTTP PUT (for example `curl -T logo.png '<url>'`), \
+or give the URL to the user to open in a browser and choose the file there. Then open it as a new document with open_upload, \
+or put it into the active document with place_upload, passing the returned `upload`. The URL takes one file and expires in \
+a few minutes; no token is needed."
+    )]
+    async fn upload_create(
+        &self,
+        Parameters(a): Parameters<UploadCreateArgs>,
+        Extension(parts): Extension<Parts>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.check_session(&parts, &a.session)?;
+        let deposit = match self.files.reserve_upload(&a.session, a.name.as_deref().unwrap_or("upload")) {
+            Ok(deposit) => deposit,
+            Err(e) => return Ok(tool_error(e.to_string())),
+        };
+        let path = format!("/uploads/{}", deposit.id);
+        Ok(CallToolResult::structured(json!({
+            "upload": deposit.id,
+            "url": format!("{}{path}", self.public_base(&parts)),
+            "path": path,
+            "method": "PUT",
+            "maxBytes": self.max_upload_bytes,
+            "expiresInSeconds": deposit.expires_in.as_secs(),
+            "accepts": uploads::ACCEPTED,
+            "note": "Send the file's raw bytes with an HTTP PUT, for example: curl -T <file> '<url>'. Or open the URL in a \
+        browser and choose the file there. No token is needed; the URL takes one file.",
+        })))
+    }
+
+    #[tool(
+        description = "Open a file sent through upload_create as a new document and make it the active document. A PDF or \
+.ai that carries its editing data (as this server's PDF exports do) opens fully editable; other files open as their artwork."
+    )]
+    async fn open_upload(
+        &self,
+        Parameters(a): Parameters<OpenUploadArgs>,
+        Extension(parts): Extension<Parts>,
+        ct: CancellationToken,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.check_session(&parts, &a.session)?;
+        let (name, data) = match self.uploaded(&a.session, &a.upload) {
+            Ok(file) => file,
+            Err(e) => return Ok(e),
+        };
+        let mut params = json!({"name": name, "dataBase64": data});
+        insert_opt(&mut params, "pages", a.pages.map(Value::from));
+        insert_opt(&mut params, "textAs", a.text_as.map(|t| Value::from(t.as_str())));
+        self.exec_one(&parts, &a.session, Step::new("document.open", params), &ct).await
+    }
+
+    #[tool(
+        description = "Place a file sent through upload_create into the active document: an image as it is, or a PDF, .ai \
+or SVG as one group. The file is embedded, never linked. Returns the ids of what was placed and its size in points."
+    )]
+    async fn place_upload(
+        &self,
+        Parameters(a): Parameters<PlaceUploadArgs>,
+        Extension(parts): Extension<Parts>,
+        ct: CancellationToken,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.check_session(&parts, &a.session)?;
+        let (name, data) = match self.uploaded(&a.session, &a.upload) {
+            Ok(file) => file,
+            Err(e) => return Ok(e),
+        };
+        let mut params = json!({"name": name, "dataBase64": data, "link": false});
+        insert_opt(&mut params, "at", a.at.map(|p| json!(p)));
+        insert_opt(&mut params, "rect", a.rect.map(|r| json!(r)));
+        insert_opt(&mut params, "page", a.page.map(Value::from));
+        self.exec_one(&parts, &a.session, Step::new("file.place", params), &ct).await
     }
 
     #[tool(
@@ -549,19 +709,6 @@ fn export_result(format: ExportFormat, mut r: Value) -> CallToolResult {
         content.push(ContentBlock::text(json!({"warnings": w}).to_string()));
     }
     CallToolResult::success(content)
-}
-
-/// The URL of the ArtServer this request reached (such as `http://127.0.0.1:8471`). rmcp has already checked
-/// Host against the allowlist. Behind a reverse proxy, the https of X-Forwarded-Proto is used. Where the proxy
-/// adds a path prefix (such as /artserver/) or rewrites Host, use --public-url.
-fn base_url(parts: &Parts) -> String {
-    let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
-    let host = header("host").unwrap_or("127.0.0.1");
-    let scheme = match header("x-forwarded-proto") {
-        Some(p) if p.eq_ignore_ascii_case("https") => "https",
-        _ => "http",
-    };
-    format!("{scheme}://{host}")
 }
 
 fn insert_opt(params: &mut Value, key: &str, value: Option<Value>) {

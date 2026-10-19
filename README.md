@@ -14,7 +14,7 @@ A headless vector graphics server that AI agents operate over the network throug
 - Place text (Japanese, vertical type, area type, type on a path). List the available fonts
 - Move, rotate, scale, reflect and shear; combine shapes (Pathfinder); graphs; text wrap
 - Find and run the allowed engine commands (`command_list` / `command_run` / `command_batch`)
-- Import SVG
+- Import SVG, and open or place files sent through an upload URL (PDF, Illustrator .ai, SVG, PNG, JPEG)
 - Export as SVG, PDF and PNG (small SVG and PNG come back in the reply; PDF and larger files come back as a download URL). Return preview images
 - Undo / redo
 
@@ -159,6 +159,9 @@ ArtServer publishes its own tools and VectorCraft's MCP tools. VectorCraft's too
 | `import_svg` | Open SVG markup as a new document (linked files are not read) |
 | `list_fonts` | List the available font families (filter with `query`). With `family`, list that family's styles |
 | `export_document` | Export as SVG, PNG or PDF. Small SVG (up to 32 KB) comes back as text and small PNG (up to 256 KB) as an image. PDF and larger files come back as a URL to fetch them from ([Receiving large exports](#receiving-large-exports)). `delivery` chooses how the result is returned (`inline` returns PDF as Base64 too) |
+| `upload_create` | Make a URL to send a file to (PDF, Illustrator `.ai` saved with PDF compatibility, SVG, PNG or JPEG). Send the file with an HTTP PUT, or open the URL in a browser ([Sending files to ArtServer](#sending-files-to-artserver)) |
+| `open_upload` | Open a sent file as a new document. A PDF exported by ArtServer opens as the document it was |
+| `place_upload` | Place a sent file into the active document (embedded), at a point or fitted into a rectangle |
 
 **VectorCraft tools**
 
@@ -196,9 +199,10 @@ Coordinates are in points (1/72 inch), with the origin at the artboard's top-lef
 | `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | Number of documents open in one session |
 | `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | Undo history limit per document |
 | `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | Rendering threads per export |
-| `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | Seconds large exports are kept |
-| `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | Total size limit of the kept exports (kept in memory) |
-| `--public-url` | `ARTSERVER_PUBLIC_URL` | none | ArtServer's URL as seen from outside (e.g. `https://example.com/artserver`). Used for export URLs. Set it behind a reverse proxy. Its host name is added to `--allowed-hosts` automatically |
+| `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | Seconds large exports and uploaded files are kept |
+| `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | Total size limit of the kept exports and uploaded files (kept in memory) |
+| `--max-upload-mib` | `ARTSERVER_MAX_UPLOAD_MIB` | 64 | Size limit of one uploaded file |
+| `--public-url` | `ARTSERVER_PUBLIC_URL` | none | ArtServer's URL as seen from outside (e.g. `https://example.com/artserver`). Used for export and upload URLs. Set it behind a reverse proxy. Its host name is added to `--allowed-hosts` automatically |
 | `--font-dirs` | `ARTSERVER_FONT_DIRS` | none | Font folders to use in addition to the fonts installed in the OS (comma-separated), for fonts your organization provides. Checking the font licenses is up to whoever runs the server |
 
 Logs go to standard error. Set the level of detail with `RUST_LOG` (e.g. `RUST_LOG=debug`).
@@ -224,10 +228,31 @@ Behind a reverse proxy, give the URL seen from outside with `--public-url`. For 
 
 Without `--public-url`, the URL is built from the request's `Host` header and the https of `X-Forwarded-Proto`. In that case the proxy must pass the host name the user used as `Host` unchanged and add `X-Forwarded-Proto` (Caddy does this by default; nginx needs `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Proto $scheme;`).
 
+## Sending files to ArtServer
+
+To use a file you have, such as a logo or an existing PDF, the AI first calls `upload_create`. It returns a URL that takes one file:
+
+```json
+{"upload": "4ea8…", "url": "http://127.0.0.1:8471/uploads/4ea8…", "method": "PUT", "maxBytes": 67108864, "expiresInSeconds": 600, …}
+```
+
+The file's raw bytes go to the URL with an HTTP PUT. Claude Code does this itself:
+
+```sh
+curl -T logo.png "http://127.0.0.1:8471/uploads/4ea8…"
+```
+
+A client that can't run commands, such as Claude Desktop, can give you the URL instead: open it in a browser, choose the file and press Send. Then the AI calls `open_upload` to open the file as a new document, or `place_upload` to put it into the active document.
+
+- Accepted formats: PDF (including Illustrator `.ai` files saved with PDF compatibility), SVG, PNG and JPEG. The format is told from the file's contents, not from its name.
+- A URL takes one file, up to `--max-upload-mib` (64 MiB by default), and expires like exports (10 minutes by default). Only the working session that made it can use the file, and closing the session discards it. No token is needed: as with download URLs, anyone who knows the URL can send a file to it until then.
+- The file is passed to the engine as data, never as a path, and placed files are embedded.
+- **Saving and resuming:** a PDF exported by ArtServer carries the document's editing data. Send it back and open it with `open_upload`, and the document comes back as it was, ready to edit.
+
 ## Security
 
 - By default it listens only on 127.0.0.1.
-- Every MCP request needs the Bearer token. Exports are fetched from `/files/` through expiring URLs that contain an unguessable ID; no token is needed there.
+- Every MCP request needs the Bearer token. Exports are fetched from `/files/`, and files are sent to `/uploads/`, through expiring URLs that contain an unguessable ID; no token is needed there.
 - The Host and Origin headers are checked (against DNS rebinding).
 - Engine commands go through an allowlist. Commands that change process-wide settings or handle files can't be run.
 - File paths are not accepted. Input and output travel in tool arguments and results. The engine's file access is confined to an empty temporary directory.
@@ -242,6 +267,7 @@ Without `--public-url`, the URL is built from the request's `Host` header and th
   - The whole server stopping because of a stack overflow or running out of memory
   - Memory shared between sessions through shared caches
 - Rate limiting is not implemented.
+- **Files sent for import are read in the same process.** A broken or malicious file could stop the whole server, so send only files from people you trust ([design policy, section 12.4](docs/design-policy.md)).
 - No Japanese fonts are bundled. ArtServer uses the fonts installed in the server's OS (such as Hiragino on macOS) or the fonts in the folders given with `--font-dirs`. A Linux server needs Japanese fonts installed.
 - Output files record "VectorCraft" (in the PDF Producer, for example).
 

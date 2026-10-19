@@ -73,6 +73,9 @@ const TOOLS: &[&str] = &[
     "import_svg",
     "list_fonts",
     "export_document",
+    "upload_create",
+    "open_upload",
+    "place_upload",
     "draw_shape",
     "draw_path",
     "set_paint",
@@ -453,6 +456,138 @@ async fn download_urls_follow_the_public_url() {
     assert_eq!(download["url"].as_str().unwrap(), format!("https://example.com/artserver{path}"));
     // ArtServer itself serves /files/… (the proxy strips the prefix)
     assert_eq!(get(&format!("{base}{path}"), &[]).await.status(), 200);
+    let _ = client.cancel().await;
+}
+
+async fn put(url: &str, headers: &[(&str, &str)], body: Vec<u8>) -> reqwest::Response {
+    let mut req = reqwest::Client::new().put(url);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    req.body(body).send().await.unwrap()
+}
+
+/// Makes an upload with upload_create and returns its id and URL.
+async fn new_upload(client: &RunningService<RoleClient, ClientConfig>, session: &str, name: &str) -> (String, String) {
+    let upload = ok(&call(client, "upload_create", json!({"session": session, "name": name})).await).clone();
+    assert_eq!(upload["method"], "PUT");
+    (
+        upload["upload"].as_str().unwrap().to_string(),
+        upload["url"].as_str().unwrap().to_string(),
+    )
+}
+
+#[tokio::test]
+async fn uploaded_files_can_be_opened_and_placed() {
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": session, "width": 300, "height": 200})).await);
+    succeeded(
+        &call(
+            &client,
+            "draw_shape",
+            json!({"session": session, "shape": "rectangle", "x": 10, "y": 10, "width": 100, "height": 50, "fill": "#3366ff"}),
+        )
+        .await,
+    );
+    let pdf_url = ok(&call(&client, "export_document", json!({"session": session, "format": "pdf"})).await)["download"]["url"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let pdf = get(&pdf_url, &[]).await.bytes().await.unwrap().to_vec();
+    let png = call(&client, "export_document", json!({"session": session, "format": "png"})).await;
+    let png = png.content.iter().find_map(|c| c.as_image()).unwrap().data.clone();
+    let png = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, png).unwrap();
+
+    let (upload, url) = new_upload(&client, &session, "saved.pdf").await;
+    assert!(url.starts_with(&format!("{base}/uploads/")), "{url}");
+    // Opening before the file is sent says so
+    let early = call(&client, "open_upload", json!({"session": session, "upload": upload})).await;
+    assert_eq!(early.is_error, Some(true), "{early:?}");
+    assert!(text_of(&early).contains("not been sent"), "{}", text_of(&early));
+
+    let sent = put(&url, &[], pdf.clone()).await;
+    assert_eq!(sent.status(), 200);
+    let sent: Value = sent.json().await.unwrap();
+    assert_eq!((sent["format"].as_str(), sent["bytes"].as_u64()), (Some("pdf"), Some(pdf.len() as u64)));
+    assert_eq!(put(&url, &[], pdf).await.status(), 409, "an upload takes one file");
+
+    // This server's PDF carries the document's editing data, so it opens as the document it was
+    let opened = call(&client, "open_upload", json!({"session": session, "upload": upload})).await;
+    let opened = ok(&opened);
+    assert_eq!(opened["restored"], true, "{opened}");
+    assert_eq!(opened["warnings"], json!([]), "{opened}");
+    let svg = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
+    let svg = text_of(&svg).to_ascii_lowercase();
+    assert!(svg.contains("#3366ff") || svg.contains("#36f"), "{svg}");
+
+    // A PNG goes into the active document, embedded
+    let (logo, logo_url) = new_upload(&client, &session, "logo.png").await;
+    assert_eq!(put(&logo_url, &[], png).await.status(), 200);
+    let placed = call(&client, "place_upload", json!({"session": session, "upload": logo, "at": [150, 100]})).await;
+    let placed = ok(&placed);
+    assert!(!placed["ids"].as_array().unwrap().is_empty(), "{placed}");
+    assert_eq!(placed["linked"], false, "{placed}");
+
+    // Another session can't use the upload, and closing the session drops it
+    let other = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": other})).await);
+    let stolen = call(&client, "place_upload", json!({"session": other, "upload": logo})).await;
+    assert_eq!(stolen.is_error, Some(true), "{stolen:?}");
+    ok(&call(&client, "session_close", json!({"session": session})).await);
+    assert_eq!(get(&logo_url, &[]).await.status(), 404);
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
+async fn uploads_are_checked() {
+    let limits = Limits {
+        max_upload_bytes: 4096,
+        ..Limits::default()
+    };
+    let base = start(limits).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let (_, url) = new_upload(&client, &session, "a.svg").await;
+    let svg = br#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>"#.to_vec();
+
+    // Only the accepted formats, within the size limit
+    assert_eq!(put(&url, &[], b"GIF89a\x01\x00\x01\x00".to_vec()).await.status(), 415);
+    let mut big = b"%PDF-1.7\n".to_vec();
+    big.resize(8192, b' ');
+    assert_eq!(put(&url, &[], big).await.status(), 413);
+
+    // A wrong ID, or a Host or Origin that isn't allowed
+    assert_eq!(put(&format!("{base}/uploads/0000"), &[], svg.clone()).await.status(), 404);
+    assert_eq!(put(&url, &[("Host", "evil.example")], svg.clone()).await.status(), 403);
+    assert_eq!(put(&url, &[("Origin", "http://evil.example")], svg.clone()).await.status(), 403);
+
+    // The page for browsers runs only its own script, which sends the file from this server's own origin
+    let page = get(&url, &[]).await;
+    assert_eq!(page.status(), 200);
+    assert!(page.headers()["content-type"].to_str().unwrap().starts_with("text/html"));
+    let policy = page.headers()["content-security-policy"].to_str().unwrap().to_string();
+    assert!(policy.contains("script-src 'self'") && policy.contains("connect-src 'self'"), "{policy}");
+    assert!(page.text().await.unwrap().contains(r#"<script src="upload.js">"#));
+    let script = get(&format!("{base}/uploads/upload.js"), &[]).await;
+    assert_eq!(script.status(), 200);
+    assert!(script.text().await.unwrap().contains(r#"method: "PUT""#));
+    assert_eq!(put(&url, &[("Origin", base.as_str())], svg).await.status(), 200);
+    assert!(get(&url, &[]).await.text().await.unwrap().contains("has been sent"));
+
+    // import_svg also takes only SVG
+    let r = call(&client, "import_svg", json!({"session": session, "svg": "%PDF-1.4\n%%EOF"})).await;
+    assert_eq!(r.is_error, Some(true), "{r:?}");
     let _ = client.cancel().await;
 }
 

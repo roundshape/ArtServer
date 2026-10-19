@@ -15,9 +15,9 @@ pub enum Caller {
     VectorCraftTool,
 }
 
-/// Commands only ArtServer's own tools use. ArtServer manages which formats can be opened and how exports
-/// are delivered, so VectorCraft's tools may not use them.
-const ARTSERVER_ONLY: &[&str] = &["file.new", "document.open", "document.export"];
+/// Commands only ArtServer's own tools use. ArtServer manages which formats can be opened or placed and how
+/// files are delivered, so VectorCraft's tools may not use them.
+const ARTSERVER_ONLY: &[&str] = &["file.new", "document.open", "file.place", "document.export"];
 
 /// Commands both may use.
 const SHARED: &[&str] = &[
@@ -108,6 +108,10 @@ const SHARED: &[&str] = &[
 /// Formats allowed for export.
 pub const EXPORT_FORMATS: &[&str] = &["svg", "pdf", "png"];
 
+/// Extensions of the file names that may be opened or placed, always with the file's contents as data. The
+/// tools check the contents too (src/uploads.rs), since the engine tells formats from the contents.
+const IMPORT_EXTENSIONS: &[&str] = &["svg", "pdf", "ai", "png", "jpg"];
+
 /// Arguments that may name a place in the file system. Refused when the value is a string. Ones that take a
 /// shape id (a number), such as `path` of `text.createInPath`, pass.
 const PATH_KEYS: &[&str] = &["path", "paths", "folder", "destination", "destinationFolder", "file", "files"];
@@ -140,10 +144,17 @@ pub fn check(command: &str, params: &Value, caller: Caller) -> Result<(), String
                 return Err(format!("export format must be one of {}", EXPORT_FORMATS.join(", ")));
             }
         }
-        "document.open" => {
-            let name = map.get("name").and_then(Value::as_str).unwrap_or_default();
-            if !map.contains_key("dataBase64") || !name.to_ascii_lowercase().ends_with(".svg") {
-                return Err("only SVG data (`name` ending in .svg with `dataBase64`) may be opened".to_string());
+        "document.open" | "file.place" => {
+            let name = map.get("name").and_then(Value::as_str).unwrap_or_default().to_ascii_lowercase();
+            let extension = name.rsplit_once('.').map(|(_, e)| e).unwrap_or_default();
+            if !map.contains_key("dataBase64") || !IMPORT_EXTENSIONS.contains(&extension) {
+                return Err(format!(
+                    "only data (`name` and `dataBase64`) in these formats may be opened or placed: {}",
+                    IMPORT_EXTENSIONS.join(", ")
+                ));
+            }
+            if map.get("link").is_some_and(|l| l != &Value::Bool(false)) {
+                return Err("linked files are not available on this server; files are always embedded".to_string());
             }
         }
         // Effects that run installed plug-ins (WebAssembly) are not allowed
@@ -224,12 +235,35 @@ mod tests {
     }
 
     #[test]
-    fn export_and_open_are_limited_to_known_forms() {
+    fn export_open_and_place_are_limited_to_known_forms() {
         assert!(check("document.export", &json!({"format": "eps"}), Caller::ArtServer).is_err());
         assert!(check("document.export", &json!({}), Caller::ArtServer).is_err());
         assert!(check("document.export", &json!({"format": "pdf"}), Caller::ArtServer).is_ok());
-        assert!(check("document.open", &json!({"name": "a.pdf", "dataBase64": ""}), Caller::ArtServer).is_err());
-        assert!(check("document.open", &json!({"name": "a.SVG", "dataBase64": ""}), Caller::ArtServer).is_ok());
+        for id in ["document.open", "file.place"] {
+            for name in ["a.SVG", "a.pdf", "a.ai", "a.png", "a.jpg"] {
+                assert!(
+                    check(id, &json!({"name": name, "dataBase64": ""}), Caller::ArtServer).is_ok(),
+                    "{id} {name}"
+                );
+            }
+            for name in ["a.eps", "a.psd", "a.vectorcraft", "a.svgz", "svg"] {
+                assert!(
+                    check(id, &json!({"name": name, "dataBase64": ""}), Caller::ArtServer).is_err(),
+                    "{id} {name}"
+                );
+            }
+            assert!(check(id, &json!({"name": "a.png"}), Caller::ArtServer).is_err(), "{id} without data");
+            assert!(check(id, &json!({"path": "/tmp/a.png"}), Caller::ArtServer).is_err(), "{id} with a path");
+        }
+        assert!(check("file.place", &json!({"name": "a.png", "dataBase64": "", "link": true}), Caller::ArtServer).is_err());
+        assert!(
+            check(
+                "file.place",
+                &json!({"name": "a.png", "dataBase64": "", "link": false}),
+                Caller::ArtServer
+            )
+            .is_ok()
+        );
     }
 
     #[test]
@@ -275,7 +309,11 @@ mod tests {
         ];
         for id in allowed_commands() {
             assert!(!CLOSED.iter().any(|c| id.starts_with(c)), "`{id}` belongs to a closed namespace");
-            assert!(!id.starts_with("file.") || id == "file.new", "`{id}` touches files");
+            // file.place is open only with data, never a path (see `check`)
+            assert!(
+                !id.starts_with("file.") || matches!(id, "file.new" | "file.place"),
+                "`{id}` touches files"
+            );
         }
     }
 }

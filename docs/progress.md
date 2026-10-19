@@ -489,3 +489,41 @@ A preliminary check before publishing (design policy section 13.2, #7). It is no
 ### Next steps
 
 1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)
+
+## 2026-10-19 Upload for import
+
+### Policy
+
+The project owner chose option A of four: a URL made by a tool. The others were an upload endpoint that takes the Bearer token, a fixed inbox folder, and fetching from a web URL. Import is opened without process isolation, for the users design policy section 1.1 assumes (trusted, in one organization), with limits on size, time and formats; section 12.4 was revised to say so. The project owner's long-term idea, a server-side image library to place images from, is recorded in design policy section 4.6 (not scheduled).
+
+### What was done
+
+- `src/uploads.rs` (new): `PUT /uploads/{id}` receives one file as the raw body, with no token (the ID in the URL is the key). `GET /uploads/{id}` shows a page with a file chooser whose script (`/uploads/upload.js`) sends the file to the same URL; the page may run only that script and talk only to this server. The format is told from the first bytes: PDF (including `.ai` saved with PDF compatibility), SVG, PNG and JPEG; anything else gets 415. Host and Origin are checked as for `/files/`, and this server's own origin also passes, for the page.
+- `src/files.rs`: the file store also holds uploads, sharing the total limit, the expiry and the deletion on `session_close` with exports, and keeping at most 8 per working session (counted apart from exports). An upload takes one file, and only its own working session can use it. `base_url` moved here from `src/tools.rs`, and the Host and Origin checks are shared with the upload endpoint.
+- `src/tools.rs`: new tools `upload_create`, `open_upload` (`document.open` with the contents as data) and `place_upload` (`file.place`, always embedded). The server description explains the steps. `import_svg` now refuses an argument that isn't SVG, since the engine picks its reader from the contents.
+- `src/policy.rs`: `file.place` is ArtServer-only. `document.open` and `file.place` take only data (`name` and `dataBase64`) whose name ends in svg, pdf, ai, png or jpg, and never a link.
+- `src/config.rs`: `--max-upload-mib` (`ARTSERVER_MAX_UPLOAD_MIB`, default 64). `src/lib.rs`: the upload routes, with that body limit.
+- README (English and Japanese): the new tools and setting, and a section on sending files. Design policy: sections 4.6, 4.7, 6.3, 12.4 and 13.2, and chapter 11.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo build --all-targets --offline --locked` | Succeeded. No new dependencies; `Cargo.lock` is unchanged |
+| `cargo test --offline --locked` | All 62 passed (45 unit, 17 E2E). New tests: the upload store (one file, own session only, never served as an export, shared limits, deletion), telling formats from contents, the names the engine gets, the own-origin rule (unit); exporting a PDF and a PNG, sending them back, opening the PDF and placing the PNG, refusal for another session, deletion on close; 415, 413, 404, 403 for Host and Origin, the page with its policy and script, a PUT from the server's own origin, `import_svg` refusing a PDF (E2E) |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+### Check against the running server
+
+Started `target/debug/artserver`, drew a star, exported a PDF, sent it back with `upload_create` and a PUT (4,015 bytes, format pdf), and opened it with `open_upload`. The result had `"restored": true` and no warnings: the engine reopened the document from the editing data in the PDF, not as plain artwork. So a PDF from ArtServer can serve for saving work and continuing it later. The E2E test now checks `restored` too.
+
+### Not yet verified
+
+- Claude Code using the new tools (ArtServer needs a restart, and Claude Code a new conversation to see the new tools)
+- The browser page in a real browser (the tests check that the page, its policy and the script are served, and that a PUT with the server's own Origin passes)
+- Illustrator `.ai` files and PDFs from other apps (the tests use ArtServer's own PDF and PNG)
+- `cargo deny check` (`cargo-deny` was not found in this shell; no dependencies were added)
+
+### Next steps
+
+1. Check uploads from Claude Code and from a browser, with real `.ai` and PDF files

@@ -9,11 +9,13 @@ pub mod files;
 pub mod policy;
 pub mod session;
 pub mod tools;
+pub mod uploads;
 
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::extract::DefaultBodyLimit;
 use axum::routing::get;
 use axum::{Json, Router, middleware};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
@@ -29,6 +31,7 @@ use crate::engine_host::EngineLimits;
 use crate::files::{Downloads, FileStore};
 use crate::session::Sessions;
 use crate::tools::ArtServer;
+use crate::uploads::Uploads;
 
 /// How often to look for expired working sessions.
 const PURGE_INTERVAL: Duration = Duration::from_secs(60);
@@ -37,7 +40,7 @@ const PURGE_INTERVAL: Duration = Duration::from_secs(60);
 pub struct App {
     pub router: Router,
     pub sessions: Arc<Sessions>,
-    /// The file store for large exports (docs/design-policy.md section 4.6)
+    /// The file store for large exports and uploaded files (docs/design-policy.md section 4.6)
     pub files: Arc<FileStore>,
     /// The empty directory the engine's file access is confined to. Kept while the server runs.
     _sandbox: tempfile::TempDir,
@@ -71,33 +74,52 @@ impl App {
         let factory_sessions = sessions.clone();
         let factory_files = files.clone();
         let public_url: Option<Arc<str>> = config.public_url.as_deref().map(Arc::from);
+        let factory_public_url = public_url.clone();
         let call_timeout = limits.call_timeout;
+        let max_upload_bytes = limits.max_upload_bytes;
         let mcp = StreamableHttpService::new(
             move || {
                 Ok(ArtServer::new(
                     factory_sessions.clone(),
                     factory_files.clone(),
-                    public_url.clone(),
+                    factory_public_url.clone(),
                     call_timeout,
+                    max_upload_bytes,
                 ))
             },
             Arc::new(LocalSessionManager::default()),
             mcp_config,
         );
 
+        let allowed_hosts: Arc<[String]> = config.allowed_hosts.clone().into();
+        let allowed_origins: Arc<[String]> = config.allowed_origins.clone().into();
         let downloads = Downloads {
             store: files.clone(),
-            allowed_hosts: config.allowed_hosts.clone().into(),
-            allowed_origins: config.allowed_origins.clone().into(),
+            allowed_hosts: allowed_hosts.clone(),
+            allowed_origins: allowed_origins.clone(),
+        };
+        let uploads = Uploads {
+            store: files.clone(),
+            allowed_hosts,
+            allowed_origins,
+            public_url,
+            max_bytes: max_upload_bytes,
         };
         let protected = Router::new()
             .nest_service("/mcp", mcp)
             .layer(middleware::from_fn_with_state(Auth::new(&config.token), auth::require_bearer));
-        // The ID in the URL is the key to an export, so no token is required (docs/design-policy.md section 4.6)
+        // The ID in the URL is the key to an export or an upload, so no token is required
+        // (docs/design-policy.md section 4.6)
+        let upload_routes = Router::new()
+            .route("/uploads/upload.js", get(uploads::script))
+            .route("/uploads/{id}", get(uploads::page).put(uploads::receive))
+            .layer(DefaultBodyLimit::max(max_upload_bytes))
+            .with_state(uploads);
         let router = Router::new()
             .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
             .route("/files/{id}", get(files::download))
             .with_state(downloads)
+            .merge(upload_routes)
             .merge(protected);
         Ok(Self {
             router,
@@ -133,10 +155,10 @@ pub async fn serve(config: Config, listener: TcpListener, signal: impl Future<Ou
                     if purged > 0 {
                         tracing::info!(purged, "closed idle sessions");
                     }
-                    // Exports of working sessions no longer in use also go when they expire (10 minutes by default)
+                    // Exports and uploads of working sessions no longer in use also go when they expire (10 minutes by default)
                     let expired = files.purge_expired();
                     if expired > 0 {
-                        tracing::info!(expired, "dropped expired exports");
+                        tracing::info!(expired, "dropped expired exports and uploads");
                     }
                 }
                 _ = purge_stop.cancelled() => break,

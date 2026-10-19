@@ -61,22 +61,26 @@ pub struct Cli {
     #[arg(long, env = "ARTSERVER_RENDER_THREADS", default_value_t = Limits::default().render_threads)]
     pub render_threads: u16,
 
-    /// Seconds large exports are kept (docs/design-policy.md section 4.6)
+    /// Seconds large exports and uploaded files are kept (docs/design-policy.md section 4.6)
     #[arg(long, env = "ARTSERVER_FILE_TTL_SECS", default_value_t = Limits::default().file_ttl.as_secs())]
     pub file_ttl_secs: u64,
 
-    /// Total size limit of the kept exports (MiB). Kept in memory
+    /// Total size limit of the kept exports and uploaded files (MiB). Kept in memory
     #[arg(long, env = "ARTSERVER_MAX_FILE_MIB", default_value_t = Limits::default().max_file_bytes / MIB)]
     pub max_file_mib: usize,
+
+    /// Size limit of one uploaded file (MiB)
+    #[arg(long, env = "ARTSERVER_MAX_UPLOAD_MIB", default_value_t = Limits::default().max_upload_bytes / MIB)]
+    pub max_upload_mib: usize,
 
     /// Font folders to use in addition to the fonts installed in the OS (comma-separated), for fonts the
     /// organization provides (docs/design-policy.md section 1.1)
     #[arg(long, env = "ARTSERVER_FONT_DIRS", value_delimiter = ',')]
     pub font_dirs: Vec<PathBuf>,
 
-    /// ArtServer's URL as seen from outside (e.g. https://example.com/artserver). Export URLs are made by adding
-    /// /files/… to it. Give it when running behind a reverse proxy. If not given, URLs are made from the incoming
-    /// Host and X-Forwarded-Proto. Its host name is added to --allowed-hosts automatically
+    /// ArtServer's URL as seen from outside (e.g. https://example.com/artserver). Export and upload URLs are made by
+    /// adding /files/… or /uploads/… to it. Give it when running behind a reverse proxy. If not given, URLs are made
+    /// from the incoming Host and X-Forwarded-Proto. Its host name is added to --allowed-hosts automatically
     #[arg(long, env = "ARTSERVER_PUBLIC_URL")]
     pub public_url: Option<String>,
 }
@@ -92,7 +96,7 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
     /// Extra font folders to load (absolute paths)
     pub font_dirs: Vec<PathBuf>,
-    /// ArtServer's URL as seen from outside (without a trailing /). Used for export URLs
+    /// ArtServer's URL as seen from outside (without a trailing /). Used for export and upload URLs
     pub public_url: Option<String>,
     pub limits: Limits,
 }
@@ -109,10 +113,12 @@ pub struct Limits {
     pub max_documents: usize,
     pub history_bytes: usize,
     pub render_threads: u16,
-    /// How long large exports are kept
+    /// How long large exports and uploaded files are kept
     pub file_ttl: Duration,
-    /// Total size limit of the kept exports (bytes)
+    /// Total size limit of the kept exports and uploaded files (bytes)
     pub max_file_bytes: usize,
+    /// Size limit of one uploaded file (bytes)
+    pub max_upload_bytes: usize,
 }
 
 impl Default for Limits {
@@ -128,6 +134,7 @@ impl Default for Limits {
             render_threads: 2,
             file_ttl: Duration::from_secs(10 * 60),
             max_file_bytes: 256 * MIB,
+            max_upload_bytes: 64 * MIB,
         }
     }
 }
@@ -169,6 +176,7 @@ impl Cli {
             render_threads: self.render_threads,
             file_ttl: Duration::from_secs(self.file_ttl_secs.max(1)),
             max_file_bytes: self.max_file_mib.max(1).saturating_mul(MIB),
+            max_upload_bytes: self.max_upload_mib.max(1).saturating_mul(MIB),
             ..Limits::default()
         };
         let font_dirs = font_dirs(self.font_dirs)?;
