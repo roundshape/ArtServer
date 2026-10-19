@@ -1,43 +1,46 @@
 # ArtServer
 
-AIエージェントがネットワーク経由の [MCP](https://modelcontextprotocol.io/)（Streamable HTTP）で操作できる、GUIなしのベクターグラフィックスサーバーです。描画・文書処理のエンジンには [VectorCraft](https://github.com/storytold/vectorcraft) を使っています。
+English | [日本語](README.ja.md)
 
-> **現在の状態: MVP（Phase 1）**
-> 信頼できる少数のクライアントがローカルで使うことを前提にしています。インターネットへの公開はしないでください（[既知の制限](#既知の制限)）。
+A headless vector graphics server that AI agents operate over the network through [MCP](https://modelcontextprotocol.io/) (Streamable HTTP). Drawing and document processing are done by the [VectorCraft](https://github.com/storytold/vectorcraft) engine.
 
-## できること
+> **Status: working on Phase 2 (adding features and checking compatibility). The MVP (Phase 1) is complete**
+> It assumes a few trusted clients using it locally. Do not expose it to the internet ([Known limitations](#known-limitations)).
 
-- 作業セッションを作り、その中で文書を作成する
-- 図形（矩形・楕円・多角形・星形・直線）とパスを描き、塗り・線・効果を設定する
-- 文字を置く（日本語、縦書き、エリア内文字、パスに沿った文字）。使えるフォントの一覧を返す
-- 移動・回転・拡大縮小・反転・傾き、図形の合成（パスファインダー）、グラフ、文字の回り込み
-- 許可したエンジンのコマンドを、探して実行する（`command_list` / `command_run` / `command_batch`）
-- SVGを読み込む
-- SVG（テキスト）、PDF（Base64）、PNG（画像）で書き出す。プレビュー画像を返す
-- 元に戻す／やり直す
+## Features
 
-## 必要なもの
+- Create a working session and create documents in it
+- Draw shapes (rectangle, ellipse, polygon, star, line) and paths; set fill, stroke and effects
+- Place text (Japanese, vertical type, area type, type on a path). List the available fonts
+- Move, rotate, scale, reflect and shear; combine shapes (Pathfinder); graphs; text wrap
+- Find and run the allowed engine commands (`command_list` / `command_run` / `command_batch`)
+- Import SVG
+- Export as SVG, PDF and PNG (small SVG and PNG come back in the reply; PDF and larger files come back as a download URL). Return preview images
+- Undo / redo
 
-- Rust 1.95 以上
-- macOS（Apple Silicon で確認）または Linux
-- 初回ビルド時に crates.io と GitHub（storytold/vectorcraft、storytold/craft-libs）へ接続できること
+## Requirements
 
-## ビルド
+- Rust 1.95 or later
+- macOS (developed and tested on Apple Silicon)
+- On Linux and Windows, only the build is checked (on GitHub Actions). Running on them has not been tested
+- Access to crates.io and GitHub (storytold/vectorcraft, storytold/craft-libs) for the first build
+
+## Build
 
 ```sh
-cargo build            # 開発用。バイナリは target/debug/artserver
-cargo build --release  # 配布・常用向け。バイナリは target/release/artserver
+cargo build            # for development; the binary is target/debug/artserver
+cargo build --release  # for distribution and everyday use; the binary is target/release/artserver
 ```
 
-開発用のビルドでも依存ライブラリは最適化されるので、手元で試すには十分な速さで動きます。配布用のビルドはさらに最適化するため、ビルドに時間がかかります。以下の例では `target/debug/artserver` を使います。
+The development build optimizes the dependencies too, so it runs fast enough for trying things locally. The release build optimizes further and takes longer to build. The examples below use `target/debug/artserver`.
 
-## 起動
+## Running
 
-### 1. トークンを作る（最初の1回だけ）
+### 1. Create a token (first time only)
 
-トークンは、ArtServer を使うための合言葉です。自分で作るランダムな文字列で、どこかから発行されるものではありません。ArtServer と Claude Code に同じ値を持たせ、一致しない要求は断ります。32文字以上の、見える ASCII 文字だけで作ってください。
+The token is the password for using ArtServer. It is a random string you make yourself; nobody issues it. ArtServer and Claude Code hold the same value, and requests that don't match are refused. Use at least 32 characters, visible ASCII characters only.
 
-ファイルに保存しておくと、ArtServer を起動し直しても同じトークンを使えます。
+If you save it in a file, ArtServer keeps using the same token after a restart.
 
 ```sh
 mkdir -p ~/.config/artserver
@@ -46,29 +49,29 @@ openssl rand -hex 32 > ~/.config/artserver/token
 chmod 600 ~/.config/artserver/token
 ```
 
-### 2. ArtServer を起動する
+### 2. Start ArtServer
 
 ```sh
 ./target/debug/artserver --token-file ~/.config/artserver/token
 # artserver listening; MCP endpoint is /mcp
 ```
 
-127.0.0.1:8471 で待ち受けます。起動したターミナルはそのまま開いておき、止めるときは Ctrl+C を押します。トークンが設定されていなければ起動しません。
+It listens on 127.0.0.1:8471. Keep the terminal open; press Ctrl+C to stop it. It doesn't start without a token.
 
-トークンは環境変数 `ARTSERVER_TOKEN` でも渡せます。ただし `ARTSERVER_TOKEN=$(openssl rand -hex 32)` のように起動のたびに作ると、トークンが変わるので、Claude Code への登録もやり直すことになります。
+You can also pass the token in the environment variable `ARTSERVER_TOKEN`. But if you generate it on every start, as in `ARTSERVER_TOKEN=$(openssl rand -hex 32)`, the token changes each time and you have to register it with Claude Code again.
 
-**作り直したら起動し直す**: ビルドしてバイナリを作り直しても、動いている ArtServer は古いバイナリのままです。新しいバイナリを使うには、Ctrl+C で止めて起動し直してください。作業セッションと文書はメモリにしか持っていないので、起動し直すと消えます。
+**Restart after rebuilding**: rebuilding the binary doesn't change an ArtServer that is already running; it keeps running the old binary. To use the new one, stop it with Ctrl+C and start it again. Working sessions and documents are kept only in memory, so a restart discards them.
 
-### ヘルスチェック
+### Health check
 
-トークンなしで確認できます。
+Works without a token.
 
 ```sh
 curl http://127.0.0.1:8471/healthz
 # {"status":"ok"}
 ```
 
-### MCP の動作確認（curl）
+### Checking MCP with curl
 
 ```sh
 U=http://127.0.0.1:8471/mcp
@@ -80,31 +83,31 @@ curl -s "${H[@]}" -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' $U
 curl -s "${H[@]}" -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"session_create","arguments":{}}}' $U
 ```
 
-## Claude Code から接続する
+## Connecting from Claude Code
 
-ArtServer を起動したまま、別のターミナルで登録します。
+Leave ArtServer running and register it from another terminal.
 
-### 1. 登録する
+### 1. Register
 
-**A. `claude mcp add` で登録する（手軽）**
+**A. With `claude mcp add` (easy)**
 
-ArtServer を使いたいフォルダに移動してから登録します。
+Go to the folder where you want to use ArtServer, then register it.
 
 ```sh
-cd <ArtServer を使いたいフォルダ>
+cd <folder where you want to use ArtServer>
 claude mcp add --transport http artserver http://127.0.0.1:8471/mcp \
   --header "Authorization: Bearer $(cat ~/.config/artserver/token)"
-claude mcp list   # artserver が Connected と出れば接続できている
+claude mcp list   # artserver shows Connected when it can connect
 ```
 
-- 既定では、**登録したフォルダで起動した Claude Code にだけ**現れます（local スコープ）。別のフォルダで起動すると表示されません。
-- どのフォルダからでも使いたい場合は `--scope user` を付けます。その場合、ArtServer が止まっている間は、Claude Code を起動するたびに接続失敗と表示されます。
-- トークンは Claude Code の設定ファイル（`~/.claude.json`）にそのまま保存されます。
-- 登録を消すには `claude mcp remove artserver` を実行します。
+- By default it appears **only in Claude Code started in the folder where you registered it** (local scope). Claude Code started in another folder doesn't show it.
+- To use it from any folder, add `--scope user`. Then, while ArtServer is stopped, Claude Code reports a failed connection every time it starts.
+- The token is stored as is in Claude Code's settings file (`~/.claude.json`).
+- To remove the registration, run `claude mcp remove artserver`.
 
-**B. `.mcp.json` で登録する（トークンをファイルに残さない）**
+**B. With `.mcp.json` (keeps the token out of files)**
 
-使いたいフォルダに `.mcp.json` を作ります。トークンの代わりに `${ARTSERVER_TOKEN}` と書くと、Claude Code が起動するときに環境変数の値で置き換えます。
+Create `.mcp.json` in the folder where you want to use ArtServer. Write `${ARTSERVER_TOKEN}` in place of the token, and Claude Code replaces it with the environment variable's value when it starts.
 
 ```json
 {
@@ -118,161 +121,161 @@ claude mcp list   # artserver が Connected と出れば接続できている
 }
 ```
 
-Claude Code は、トークンを環境変数に入れて起動します。初回の起動時に、このプロジェクトの MCP サーバーを使うかどうか聞かれるので許可してください。
+Start Claude Code with the token in the environment variable. On the first start, it asks whether to use this project's MCP servers; allow it.
 
 ```sh
 ARTSERVER_TOKEN=$(cat ~/.config/artserver/token) claude
 ```
 
-### 2. Claude Code を起動し直す
+### 2. Restart Claude Code
 
-MCP サーバーの登録は、Claude Code の起動時に読み込まれます。登録する前から開いていた Claude Code では使えないので、一度終了して起動し直してください。`claude -c` で起動すると、直前の会話の続きから始まります。
+Claude Code reads the MCP server registrations when it starts. A Claude Code that was already open before you registered can't use ArtServer, so quit it and start it again. `claude -c` continues from the previous conversation.
 
-起動したら `/mcp` を入力し、`artserver` がつながっているか確かめます。
+Once it starts, type `/mcp` and check that `artserver` is connected.
 
-### 3. 使ってみる
+### 3. Try it
 
-例えば「ArtServer で 300×200 の文書に青い角丸の矩形を描いて SVG で見せて」と頼みます。
+For example, ask: "Using ArtServer, draw a blue rounded rectangle in a 300×200 document and show it as SVG."
 
-### つながらないとき
+### If it doesn't connect
 
-| 症状 | 考えられる原因 |
+| Symptom | Likely cause |
 |---|---|
-| `/mcp` に `artserver` が出ない | 登録したのと別のフォルダで Claude Code を起動した。または登録する前に起動した Claude Code を使っている |
-| 接続失敗と出る | ArtServer が止まっている |
-| 401（unauthorized） | 登録したトークンと ArtServer のトークンが一致しない（トークンを作り直したなど）。登録し直す |
-| B の方法でつながらない | `ARTSERVER_TOKEN` を設定せずに `claude` を起動した |
+| `artserver` isn't listed in `/mcp` | Claude Code was started in a different folder from the one you registered in, or you are using a Claude Code started before you registered |
+| A failed connection is reported | ArtServer isn't running |
+| 401 (unauthorized) | The registered token doesn't match ArtServer's token (for example, the token was regenerated). Register again |
+| Method B doesn't connect | `claude` was started without `ARTSERVER_TOKEN` set |
 
-## ツール
+## Tools
 
-ArtServer のツールと、VectorCraft の MCP のツールを公開しています。VectorCraft のツールは、ArtServer の許可リストを通してエンジンを呼びます（[設計方針 4.7節](docs/design-policy.md)）。どのツールも、`session_create` が返したハンドルを `session` 引数で受け取ります。
+ArtServer publishes its own tools and VectorCraft's MCP tools. VectorCraft's tools call the engine through ArtServer's allowlist ([design policy, section 4.7](docs/design-policy.md)). Every tool takes the handle returned by `session_create` as its `session` argument.
 
-**ArtServer のツール**
+**ArtServer tools**
 
-| ツール | 内容 |
+| Tool | Description |
 |---|---|
-| `session_create` / `session_close` | 作業セッションの作成・破棄 |
-| `document_new` | 新しい文書（アートボード1つ）を作る |
-| `import_svg` | SVG のマークアップを新しい文書として開く（リンクされたファイルは読まない） |
-| `list_fonts` | 使えるフォントのファミリーの一覧（`query` で絞り込み）。`family` を指定すると、そのスタイルの一覧 |
-| `export_document` | SVG・PNG・PDF で書き出す。小さい SVG（32KB まで）はテキスト、小さい PNG（256KB まで）は画像で返す。PDF とそれより大きいものは、取りに来るための URL を返す（[大きい書き出し結果の受け取り](#大きい書き出し結果の受け取り)）。`delivery` で返し方を指定できる（`inline` なら PDF も Base64 で返す） |
+| `session_create` / `session_close` | Create / discard a working session |
+| `document_new` | Create a new document (with one artboard) |
+| `import_svg` | Open SVG markup as a new document (linked files are not read) |
+| `list_fonts` | List the available font families (filter with `query`). With `family`, list that family's styles |
+| `export_document` | Export as SVG, PNG or PDF. Small SVG (up to 32 KB) comes back as text and small PNG (up to 256 KB) as an image. PDF and larger files come back as a URL to fetch them from ([Receiving large exports](#receiving-large-exports)). `delivery` chooses how the result is returned (`inline` returns PDF as Base64 too) |
 
-**VectorCraft のツール**
+**VectorCraft tools**
 
-| ツール | 内容 |
+| Tool | Description |
 |---|---|
-| `draw_shape` | 矩形・楕円・多角形・星形・直線を描く。塗り・線・破線・不透明度・名前・効果も指定できる |
-| `draw_path` | 点の並び（ベジェのハンドル付きも可）か SVG のパスデータからパスを描く |
-| `set_paint` | 塗り・線・線幅を設定する |
-| `transform` | 移動・回転・拡大縮小・反転・傾き（組み合わせ可、コピーも可） |
-| `add_text` | 文字を置く。フォント・サイズ・色・揃え・縦書き、枠への流し込み、パスに沿った文字 |
-| `pathfinder` | 図形を合成する（合体、前面で型抜き、交差、中マド、分割など） |
-| `apply_effect` | 効果をかける。種類を省くと効果の一覧を返す |
-| `create_graph` | CSV などのデータからグラフを作る |
-| `text_wrap` | 文字の回り込みを設定・解除する |
-| `render_preview` | アートボードのプレビュー画像を返す |
-| `doc_inspect` | 文書のレイヤー構造、オブジェクトの id・種類・範囲・塗りなどを返す（範囲の指定可） |
-| `undo` / `redo` | 元に戻す／やり直す |
-| `command_list` / `command_run` / `command_batch` | 許可リストにあるエンジンのコマンドを探す・実行する・まとめて実行する。許可リストにないコマンドは使えない |
+| `draw_shape` | Draw a rectangle, ellipse, polygon, star or line. Fill, stroke, dashes, opacity, name and effects can be set too |
+| `draw_path` | Draw a path from a list of points (Bézier handles allowed) or from SVG path data |
+| `set_paint` | Set fill, stroke and stroke width |
+| `transform` | Move, rotate, scale, reflect, shear (can be combined, and can copy) |
+| `add_text` | Place text. Font, size, color, alignment, vertical type, flowing into a frame, type on a path |
+| `pathfinder` | Combine shapes (unite, minus front, intersect, exclude, divide, and more) |
+| `apply_effect` | Apply an effect. Without a kind, returns the list of effects |
+| `create_graph` | Make a graph from CSV or other data |
+| `text_wrap` | Set or release text wrap |
+| `render_preview` | Return a preview image of the artboard |
+| `doc_inspect` | Return the document's layer structure and each object's id, kind, bounds, paint and so on (a range can be given) |
+| `undo` / `redo` | Undo / redo |
+| `command_list` / `command_run` / `command_batch` | Find, run, or run several of the engine commands on the allowlist. Commands not on the allowlist can't be used |
 
-座標の単位はポイント（1/72インチ）で、原点はアートボードの左上、y は下向きです。
+Coordinates are in points (1/72 inch), with the origin at the artboard's top-left and y pointing down.
 
-## 設定
+## Configuration
 
-| 引数 | 環境変数 | 既定値 | 内容 |
+| Argument | Environment variable | Default | Description |
 |---|---|---|---|
-| `--bind` | `ARTSERVER_BIND` | `127.0.0.1:8471` | 待ち受けアドレス |
-| `--allow-public-bind` | | 無効 | ループバック以外での待ち受けを許可する（TLSを終端するリバースプロキシの背後でだけ使う） |
-| `--token-file` | `ARTSERVER_TOKEN_FILE` | | トークンのファイル。未指定なら `ARTSERVER_TOKEN` |
-| `--allowed-hosts` | `ARTSERVER_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | 受け付ける Host ヘッダ |
-| `--allowed-origins` | `ARTSERVER_ALLOWED_ORIGINS` | なし | 受け付ける Origin。空なら Origin 付きの要求（ブラウザから）をすべて拒否 |
-| `--max-sessions` | `ARTSERVER_MAX_SESSIONS` | 8 | 同時に持てる作業セッション数 |
-| `--session-idle-secs` | `ARTSERVER_SESSION_IDLE_SECS` | 1800 | 使われないセッションを破棄するまでの秒数 |
-| `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | 1回の呼び出しの制限時間 |
-| `--max-body-bytes` | `ARTSERVER_MAX_BODY_BYTES` | 16777216 | 要求本文の上限 |
-| `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | 1セッションで開ける文書数 |
-| `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | 文書1つあたりの Undo 履歴の上限 |
-| `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | 書き出し1回あたりの描画スレッド数 |
-| `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | 大きい書き出し結果を預かっておく秒数 |
-| `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | 預かる書き出し結果の合計の上限（メモリに持つ） |
-| `--public-url` | `ARTSERVER_PUBLIC_URL` | なし | 外から見える ArtServer の URL（例: `https://example.co.jp/artserver`）。書き出し結果の URL に使う。リバースプロキシの後ろで指定する。ホスト名は `--allowed-hosts` に自動で加わる |
-| `--font-dirs` | `ARTSERVER_FONT_DIRS` | なし | OS に入っているフォントに加えて使うフォントのフォルダ（カンマ区切り）。組織で用意したフォントを置く用途。フォントのライセンスは運用する側で確認する |
+| `--bind` | `ARTSERVER_BIND` | `127.0.0.1:8471` | Listen address |
+| `--allow-public-bind` | | off | Allow listening on addresses other than loopback (use only behind a reverse proxy that terminates TLS) |
+| `--token-file` | `ARTSERVER_TOKEN_FILE` | | Token file. If not given, `ARTSERVER_TOKEN` is used |
+| `--allowed-hosts` | `ARTSERVER_ALLOWED_HOSTS` | `localhost,127.0.0.1,::1` | Host headers to accept |
+| `--allowed-origins` | `ARTSERVER_ALLOWED_ORIGINS` | none | Origins to accept. If empty, every request with an Origin header (from a browser) is refused |
+| `--max-sessions` | `ARTSERVER_MAX_SESSIONS` | 8 | Number of working sessions held at once |
+| `--session-idle-secs` | `ARTSERVER_SESSION_IDLE_SECS` | 1800 | Seconds before an unused session is discarded |
+| `--call-timeout-secs` | `ARTSERVER_CALL_TIMEOUT_SECS` | 60 | Time limit for one call |
+| `--max-body-bytes` | `ARTSERVER_MAX_BODY_BYTES` | 16777216 | Maximum request body size |
+| `--max-documents` | `ARTSERVER_MAX_DOCUMENTS` | 8 | Number of documents open in one session |
+| `--history-mib` | `ARTSERVER_HISTORY_MIB` | 64 | Undo history limit per document |
+| `--render-threads` | `ARTSERVER_RENDER_THREADS` | 2 | Rendering threads per export |
+| `--file-ttl-secs` | `ARTSERVER_FILE_TTL_SECS` | 600 | Seconds large exports are kept |
+| `--max-file-mib` | `ARTSERVER_MAX_FILE_MIB` | 256 | Total size limit of the kept exports (kept in memory) |
+| `--public-url` | `ARTSERVER_PUBLIC_URL` | none | ArtServer's URL as seen from outside (e.g. `https://example.com/artserver`). Used for export URLs. Set it behind a reverse proxy. Its host name is added to `--allowed-hosts` automatically |
+| `--font-dirs` | `ARTSERVER_FONT_DIRS` | none | Font folders to use in addition to the fonts installed in the OS (comma-separated), for fonts your organization provides. Checking the font licenses is up to whoever runs the server |
 
-ログは標準エラー出力に出ます。詳しさは `RUST_LOG`（例: `RUST_LOG=debug`）で変えられます。
+Logs go to standard error. Set the level of detail with `RUST_LOG` (e.g. `RUST_LOG=debug`).
 
-## 大きい書き出し結果の受け取り
+## Receiving large exports
 
-PDF や大きい SVG・PNG は、`export_document` が中身の代わりに URL を返します。ArtServer は書き出し結果をメモリに預かり（ディスクには書かない）、期限（既定 10 分）が過ぎるか作業セッションを閉じると捨てます。
+For PDF and large SVG or PNG, `export_document` returns a URL in place of the content. ArtServer keeps the export in memory (it never writes it to disk) and discards it when it expires (10 minutes by default) or when the working session is closed.
 
 ```json
 {"format": "pdf", "bytes": 5242880, "warnings": [],
- "download": {"url": "http://127.0.0.1:8471/files/7f3a…", "path": "/files/7f3a…", "name": "ポスター.pdf", "expiresInSeconds": 600, "note": "…"}}
+ "download": {"url": "http://127.0.0.1:8471/files/7f3a…", "path": "/files/7f3a…", "name": "poster.pdf", "expiresInSeconds": 600, "note": "…"}}
 ```
 
-URL は**トークンなしで取れます**。ブラウザで開くとダウンロードされ、curl でも取れます。期限までは何度でも取れます。
+The URL **can be fetched without a token**. Opening it in a browser downloads the file, and curl works too. It can be fetched any number of times until it expires.
 
 ```sh
 curl -o poster.pdf "http://127.0.0.1:8471/files/7f3a…"
 ```
 
-URL の ID（256ビットの乱数）が合鍵の代わりなので、**URL を知っている人は、期限までは誰でも取れます**。URL を共有の場所に貼らないでください。取ったファイルは、ブラウザの中では開かず、必ずダウンロードになります（`Content-Disposition: attachment`、`Content-Security-Policy: sandbox`、`X-Content-Type-Options: nosniff`）。Host と Origin は、`/mcp` と同じ許可リストで検査します。
+The ID in the URL (a 256-bit random number) serves as the key, so **anyone who knows the URL can fetch the file until it expires**. Don't paste the URL in shared places. The file is always downloaded and never opened inside the browser (`Content-Disposition: attachment`, `Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff`). The Host and Origin headers are checked against the same allowlists as `/mcp`.
 
-リバースプロキシの後ろで使う場合は、外から見える URL を `--public-url` で指定してください。例えば `--public-url https://example.co.jp/artserver` なら、書き出し結果の URL は `https://example.co.jp/artserver/files/…` になります（プロキシがパスの前置き `/artserver` を外して ArtServer に渡す構成にも対応します）。プロキシが `/files/` も ArtServer に渡すように設定してください。
+Behind a reverse proxy, give the URL seen from outside with `--public-url`. For example, with `--public-url https://example.com/artserver`, export URLs become `https://example.com/artserver/files/…` (this also works when the proxy strips the `/artserver` prefix before passing requests to ArtServer). Configure the proxy to pass `/files/` to ArtServer as well.
 
-`--public-url` を指定しない場合は、届いた `Host` と `X-Forwarded-Proto` の https から URL を作ります。この場合、プロキシが利用者の使ったホスト名をそのまま `Host` で渡し、`X-Forwarded-Proto` を付ける必要があります（Caddy は既定でそうなる。nginx は `proxy_set_header Host $host;` と `proxy_set_header X-Forwarded-Proto $scheme;` が必要）。
+Without `--public-url`, the URL is built from the request's `Host` header and the https of `X-Forwarded-Proto`. In that case the proxy must pass the host name the user used as `Host` unchanged and add `X-Forwarded-Proto` (Caddy does this by default; nginx needs `proxy_set_header Host $host;` and `proxy_set_header X-Forwarded-Proto $scheme;`).
 
-## セキュリティ
+## Security
 
-- 既定では 127.0.0.1 でだけ待ち受けます。
-- すべての MCP 要求に Bearer トークンが必要です。書き出し結果の受け取り（`/files/`）は、推測できない ID を含む期限付きの URL で行い、トークンは求めません。
-- Host / Origin ヘッダを検査します（DNSリバインディング対策）。
-- エンジンのコマンドは許可リスト方式で、プロセス全体の設定を変えるコマンドやファイルを扱うコマンドは実行できません。
-- ファイルパスは受け付けません。入力も出力もツールの引数と結果で受け渡します。エンジンのファイルアクセスは、空の一時ディレクトリの中に閉じ込めています。
-- セッション数・待ち行列・本文サイズ・文書数・履歴・実行時間に上限があります。
+- By default it listens only on 127.0.0.1.
+- Every MCP request needs the Bearer token. Exports are fetched from `/files/` through expiring URLs that contain an unguessable ID; no token is needed there.
+- The Host and Origin headers are checked (against DNS rebinding).
+- Engine commands go through an allowlist. Commands that change process-wide settings or handle files can't be run.
+- File paths are not accepted. Input and output travel in tool arguments and results. The engine's file access is confined to an empty temporary directory.
+- Sessions, queues, body size, documents, history and run time are limited.
 
-## 既知の制限
+## Known limitations
 
-- **TLS は実装していません。** 外部に出す場合は、TLS を終端するリバースプロキシの背後に置いてください。
-- **利用者は1人（トークン1つ）だけです。** 複数ユーザーと権限管理は未実装です。
-- **1つのプロセスの中で全セッションを動かしています。** そのため次のことは防げません（[設計方針 6.5節](docs/design-policy.md)）。
-  - キャンセルに応じない処理の強制停止。制限時間を超えるとキャンセルを求めますが、処理が止まるまでそのセッションは混雑中になります。
-  - スタックオーバーフロー・メモリ不足によるサーバー全体の停止
-  - 共有キャッシュによるメモリのセッション間共有
-- レート制限は未実装です。
-- 日本語フォントは同梱していません。サーバーの OS に入っているフォント（macOS ならヒラギノなど）か、`--font-dirs` で指定したフォルダのフォントを使います。Linux のサーバーには、日本語フォントを用意する必要があります。
-- 出力ファイル（PDF の Producer など）には "VectorCraft" と記録されます。
+- **TLS is not implemented.** To expose ArtServer outside, put it behind a reverse proxy that terminates TLS.
+- **Only one user (one token).** Multiple users and permission management are not implemented.
+- **All sessions run in one process.** So the following can't be prevented ([design policy, section 6.5](docs/design-policy.md)):
+  - Forcibly stopping work that doesn't respond to cancellation. Past the time limit, ArtServer asks for cancellation, but the session stays busy until the work stops.
+  - The whole server stopping because of a stack overflow or running out of memory
+  - Memory shared between sessions through shared caches
+- Rate limiting is not implemented.
+- No Japanese fonts are bundled. ArtServer uses the fonts installed in the server's OS (such as Hiragino on macOS) or the fonts in the folders given with `--font-dirs`. A Linux server needs Japanese fonts installed.
+- Output files record "VectorCraft" (in the PDF Producer, for example).
 
-## テスト
+## Tests
 
 ```sh
 cargo test
 ```
 
-単体テストと、実際に待ち受けたサーバーに MCP クライアントで接続するエンドツーエンドのテストが走ります。
+This runs the unit tests and the end-to-end tests, which connect an MCP client to a server that is actually listening.
 
-## 依存ライブラリのライセンスと脆弱性
+## Dependency licenses and vulnerabilities
 
-[cargo-deny](https://github.com/EmbarkStudios/cargo-deny) と [cargo-about](https://github.com/EmbarkStudios/cargo-about) を使います（例: `brew install cargo-deny cargo-about`）。
+ArtServer uses [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) and [cargo-about](https://github.com/EmbarkStudios/cargo-about) (e.g. `brew install cargo-deny cargo-about`).
 
 ```sh
-cargo deny check                                          # ライセンス・脆弱性・取得元の検査（設定は deny.toml）
-cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md  # ライセンス表示の生成（設定は about.toml）
+cargo deny check                                          # check licenses, vulnerabilities and sources (settings in deny.toml)
+cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md  # generate the license notices (settings in about.toml)
 ```
 
-- 依存を追加・更新したら両方を実行し、`THIRD_PARTY_NOTICES.md` を更新します。
-- `cargo deny check` は脆弱性のデータベース（RustSec）を、`cargo about generate` は一部のクレートのライセンス文を GitHub から取得するので、ネットワークが必要です。
-- `THIRD_PARTY_NOTICES.md` は生成物です。前半の手書きの部分を変えるときは `about.hbs` を編集します。
+- After adding or updating dependencies, run both and update `THIRD_PARTY_NOTICES.md`.
+- Both need the network: `cargo deny check` fetches the vulnerability database (RustSec), and `cargo about generate` fetches the license texts of some crates from GitHub.
+- `THIRD_PARTY_NOTICES.md` is generated. To change its hand-written first part, edit `about.hbs`.
 
-## ドキュメント
+## Documentation
 
-- [設計方針](docs/design-policy.md)
-- [Phase 0 の調査結果](docs/architecture.md)
-- [進捗](docs/progress.md)
+- [Design policy](docs/design-policy.md)
+- [Phase 0 investigation](docs/architecture.md)
+- [Progress](docs/progress.md)
 
-## ライセンス
+## License
 
-ArtServer 自身のコードは MIT ライセンスです（[LICENSE](LICENSE)）。依存しているコンポーネントのライセンスは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
+ArtServer's own code is licensed under the MIT License ([LICENSE](LICENSE)). For the licenses of the components it depends on, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-## 謝辞
+## Acknowledgments
 
-ArtServer は **VectorCraft by the ArtCraft team** をベースにしています（MIT OR Apache-2.0）。ArtServer は VectorCraft の公式の派生版ではなく、ArtCraft team による承認や保証を受けたものでもありません。
+ArtServer is based on **VectorCraft by the ArtCraft team** (MIT OR Apache-2.0). ArtServer is not an official VectorCraft derivative, and it is not approved or warranted by the ArtCraft team.
