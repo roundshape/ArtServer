@@ -947,3 +947,9 @@ The project owner decided that ArtServer doesn't support Docker: no Dockerfile o
 The project owner decided that switching color settings per job (design policy section 13.2 #8; for example a Japan Color profile for one print job and another for the next) waits; it was listed for Phase 2. The engine keeps one set of color settings for the whole process (`crates/color/src/cms/mod.rs:892`), and even `edit.assignProfile` on one document replaces it (`crates/engine/src/cmd/colormgmt.rs:264`), so the commands stay closed and every working session uses the defaults: RGB sRGB and CMYK "VectorCraft Generic CMYK (SWOP-like)", the engine's own model. VectorCraft has no Japan Color built in, and ICC profiles can't be loaded (`color.loadProfile` is closed). Revisited when print work needs CMYK conversion per printing condition on the server, which would bring process isolation forward (section 12.4).
 
 - Design policy section 13.2 #8.
+
+## 2026-10-19 Not returning exports as resource links for now
+
+The project owner decided that returning an export's download URL as an MCP resource link (design policy section 13.2 #11; a `resource_link` block in the tool result, which tells the client app that it is a file) waits; it was listed for Phase 2. Today the URL is in the tool's JSON result (`src/tools.rs`, `deposit`), and with Claude Code the AI saves the file with curl (verified 2026-10-18). Claude Code's MCP documentation and changelog were searched, and nothing was found on how it handles a resource link: whether it shows the model the URI, fetches the file itself, or shows the user a link. The MCP specification lets a client fetch one with `resources/read`, which ArtServer doesn't implement. A resource link might help clients that can't run curl; it would be tried when such a client is needed.
+
+- Design policy sections 4.6 and 13.2 #11.
