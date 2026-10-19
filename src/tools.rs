@@ -1,12 +1,12 @@
-//! MCP のツール定義。
+//! MCP tool definitions.
 //!
-//! ArtServer のツール（作業セッション、文書の作成・読み込み・書き出し、フォントの一覧）は
-//! ここで定義し、エンジンのコマンド列に変換する。それ以外の編集は VectorCraft のツールを
-//! そのまま公開し、作業セッションの実行器で GuardedBackend の上で動かす
-//! （docs/design-policy.md 4.7節）。
+//! ArtServer's tools (working sessions, creating, importing and exporting documents, the font list) are
+//! defined here and turned into sequences of engine commands. Other editing is done by VectorCraft's tools,
+//! published as they are and run on GuardedBackend in the working session's executor
+//! (docs/design-policy.md section 4.7).
 //!
-//! 引数の構造体のドキュメントコメントは、そのままツールの入力スキーマの説明として AI に
-//! 見せるため英語で書く。
+//! The doc comments of the argument structs are shown to the AI as is, as the descriptions in the tools'
+//! input schemas.
 
 use std::future::Future;
 use std::pin::Pin;
@@ -42,7 +42,7 @@ origin at the artboard's top-left, y down. list_fonts tells which font families 
 come back as a download URL valid for a few minutes: open it in a browser or fetch it with an HTTP GET (for example \
 `curl -o out.pdf <url>`); no token is needed, and anyone with the URL can download the file until it expires.";
 
-/// 公開する VectorCraft のツール（docs/design-policy.md 4.7節）。
+/// The VectorCraft tools ArtServer publishes (docs/design-policy.md section 4.7).
 const VECTORCRAFT_TOOLS: &[&str] = &[
     "draw_shape",
     "draw_path",
@@ -62,27 +62,27 @@ const VECTORCRAFT_TOOLS: &[&str] = &[
     "command_batch",
 ];
 
-/// VectorCraft のツールに足す、作業セッションのハンドルの引数の説明。
+/// The description of the working session handle argument added to VectorCraft's tools.
 const SESSION_DESCRIPTION: &str = "Session handle returned by session_create.";
 
-/// PNG 書き出しの倍率の上限。
+/// Maximum scale of a PNG export.
 const MAX_PNG_SCALE: f64 = 16.0;
 
-/// 返し方が auto のとき、返事に入れる大きさの上限（docs/design-policy.md 4.6節）。AI の会話に
-/// そのまま入るので、テキストは Claude Code に届く量（約2万5千トークン）より十分小さくする。
-/// PDF は AI が読めないので、常に URL にする。
+/// With delivery auto, the largest result put in the reply (docs/design-policy.md section 4.6). It goes into
+/// the AI's conversation as is, so text is kept well below what reaches Claude Code (about 25,000 tokens).
+/// PDF is always a URL, because the AI can't read it.
 const INLINE_SVG_BYTES: usize = 32 * 1024;
 const INLINE_PNG_BYTES: usize = 256 * 1024;
 
-/// VectorCraft のツールの呼び出し口が返す future。
+/// The future that the entry point of VectorCraft's tools returns.
 type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<CallToolResponse, ErrorData>> + Send + 'a>>;
 
-/// MCP サーバー本体。要求ごとに作られる（中身は共有の作業セッション表への参照）。
+/// The MCP server. Made per request (it holds references to the shared table of working sessions).
 #[derive(Clone)]
 pub struct ArtServer {
     sessions: Arc<Sessions>,
     files: Arc<FileStore>,
-    /// 外から見える ArtServer の URL（--public-url）。書き出し結果の URL に使う
+    /// ArtServer's URL as seen from outside (--public-url). Used for export URLs
     public_url: Option<Arc<str>>,
     call_timeout: Duration,
     tool_router: ToolRouter<Self>,
@@ -171,7 +171,7 @@ pub struct ExportArgs {
     pub delivery: Option<Delivery>,
 }
 
-/// 書き出し結果の返し方。
+/// How an export is returned.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Delivery {
@@ -182,7 +182,7 @@ pub enum Delivery {
 }
 
 impl Delivery {
-    /// 大きさ `bytes` の `format` の結果を、返事に入れるか。
+    /// Should a `format` result of `bytes` bytes go in the reply?
     fn inline(self, format: ExportFormat, bytes: usize) -> bool {
         match (self, format) {
             (Delivery::Inline, _) => true,
@@ -208,8 +208,8 @@ impl ArtServer {
         }
     }
 
-    /// 作業セッション `handle` で `steps` を実行する。ツール実行の失敗は `Err(CallToolResult)`
-    /// （AI に見せるエラー結果）、要求そのものの誤りは `ErrorData` で返す。
+    /// Runs `steps` in working session `handle`. A failed tool run comes back as `Err(CallToolResult)`
+    /// (an error result shown to the AI); a fault in the request itself as `ErrorData`.
     async fn exec(
         &self,
         parts: &Parts,
@@ -223,7 +223,7 @@ impl ArtServer {
         Ok(self.within_limits(host.run(steps, token.clone()), &token, ct).await)
     }
 
-    /// 1ステップだけ実行し、その結果をそのまま構造化結果として返す。
+    /// Runs one step and returns its result as is, as the structured result.
     async fn exec_one(&self, parts: &Parts, handle: &str, step: Step, ct: &CancellationToken) -> Result<CallToolResult, ErrorData> {
         Ok(match self.exec(parts, handle, vec![step], ct).await? {
             Ok(mut results) => CallToolResult::structured(results.pop().unwrap_or(Value::Null)),
@@ -231,7 +231,7 @@ impl ArtServer {
         })
     }
 
-    /// VectorCraft のツール `name` を作業セッション `handle` で実行する。
+    /// Runs VectorCraft's tool `name` in working session `handle`.
     async fn run_vectorcraft_tool(
         &self,
         parts: &Parts,
@@ -249,8 +249,8 @@ impl ArtServer {
         })
     }
 
-    /// 制限時間とクライアントのキャンセルを見ながら `run` を待つ。どちらかで打ち切るときは
-    /// `token` でエンジンに中断を求める。
+    /// Waits for `run`, watching the time limit and the client's cancellation. When either cuts it short,
+    /// asks the engine through `token` to stop.
     async fn within_limits<T>(
         &self,
         run: impl Future<Output = Result<T, HostError>>,
@@ -270,7 +270,7 @@ impl ArtServer {
         }
     }
 
-    /// 書き出し結果の URL の前の部分。--public-url があればそれ、なければこの要求が届いた ArtServer の URL。
+    /// The part of an export URL before /files/: --public-url if given, else the URL of the ArtServer this request reached.
     fn download_base(&self, parts: &Parts) -> String {
         match &self.public_url {
             Some(url) => url.to_string(),
@@ -278,7 +278,7 @@ impl ArtServer {
         }
     }
 
-    /// 書き出し結果を預かり場所に入れ、取りに来るための URL を返す（docs/design-policy.md 4.6節）。
+    /// Puts an export in the file store and returns the URL to fetch it from (docs/design-policy.md section 4.6).
     fn deposit(&self, parts: &Parts, session: &str, format: ExportFormat, title: Option<&str>, exported: Value) -> Result<CallToolResult, ErrorData> {
         let data = match exported
             .get("dataBase64")
@@ -423,7 +423,7 @@ GET can fetch without a token. `delivery` overrides the choice (inline returns P
             }
             insert_opt(&mut params, "outlineText", Some(Value::from(outline)));
         }
-        // 文書の名前（title）は、URL で渡すときのファイル名に使う
+        // The document's name (title) becomes the file name when the export is passed by URL
         let steps = vec![Step::new("document.inspect", json!({"depth": 0})), Step::new("document.export", params)];
         let mut results = match self.exec(&parts, &a.session, steps, &ct).await? {
             Ok(results) => results,
@@ -452,8 +452,8 @@ impl ServerHandler for ArtServer {
     }
 }
 
-/// 公開する VectorCraft のツールの定義。どれにも作業セッションのハンドル `session` を必須の
-/// 引数として足す。
+/// The definitions of the VectorCraft tools ArtServer publishes. Each gets the working session handle
+/// `session` as a required argument.
 fn vectorcraft_tools() -> &'static [Tool] {
     static TOOLS: OnceLock<Vec<Tool>> = OnceLock::new();
     TOOLS.get_or_init(|| {
@@ -482,7 +482,7 @@ fn add_session_argument(def: &mut Value) {
     }
 }
 
-/// VectorCraft のツールの呼び出し口。`session` を取り出し、残りの引数をそのままツールに渡す。
+/// The entry point of VectorCraft's tools. Takes out `session` and passes the remaining arguments to the tool as is.
 fn call_vectorcraft_tool(ctx: ToolCallContext<'_, ArtServer>) -> ToolFuture<'_> {
     Box::pin(async move {
         let mut args = ctx.arguments.unwrap_or_default();
@@ -503,8 +503,8 @@ fn call_vectorcraft_tool(ctx: ToolCallContext<'_, ArtServer>) -> ToolFuture<'_> 
     })
 }
 
-/// VectorCraft のツールの結果を MCP の結果にする。structuredContent は付けない（Claude Code などは
-/// それがあると本文を見せないため。export_result と同じ考え方）。
+/// Turns a VectorCraft tool result into an MCP result, without structuredContent (with it, Claude Code and
+/// other clients don't show the content; the same idea as export_result).
 fn tool_result(r: ToolResult) -> CallToolResult {
     let content: Result<Vec<ContentBlock>, _> = r.content.into_iter().map(serde_json::from_value).collect();
     match content {
@@ -514,11 +514,11 @@ fn tool_result(r: ToolResult) -> CallToolResult {
     }
 }
 
-/// エンジンの書き出し結果を、形式に合った MCP の結果にする。
+/// Turns an engine export into the MCP result that suits its format.
 ///
-/// SVG と PNG は本文だけを返し、`structuredContent` は付けない。Claude Code などのクライアントは
-/// `structuredContent` があるとそちらを表示し、`content` の本文を見せないため。警告があるときだけ
-/// 2つ目のテキストとして添える。
+/// SVG and PNG return only the content, without `structuredContent`: Claude Code and other clients show
+/// `structuredContent` when it is there and hide the content. Warnings, when there are any, are added as a
+/// second text.
 fn export_result(format: ExportFormat, mut r: Value) -> CallToolResult {
     let data = match r.as_object_mut().and_then(|o| o.remove("dataBase64")) {
         Some(Value::String(data)) => data,
@@ -551,9 +551,9 @@ fn export_result(format: ExportFormat, mut r: Value) -> CallToolResult {
     CallToolResult::success(content)
 }
 
-/// この要求が届いた ArtServer の URL（`http://127.0.0.1:8471` など）。Host は rmcp が許可リストで
-/// 検査済み。リバースプロキシの後ろでは X-Forwarded-Proto の https を使う。プロキシがパスの
-/// 前置き（/artserver/ など）を付ける構成や、Host を書き換える構成では --public-url を使う。
+/// The URL of the ArtServer this request reached (such as `http://127.0.0.1:8471`). rmcp has already checked
+/// Host against the allowlist. Behind a reverse proxy, the https of X-Forwarded-Proto is used. Where the proxy
+/// adds a path prefix (such as /artserver/) or rewrites Host, use --public-url.
 fn base_url(parts: &Parts) -> String {
     let header = |name: &str| parts.headers.get(name).and_then(|v| v.to_str().ok());
     let host = header("host").unwrap_or("127.0.0.1");
@@ -639,7 +639,7 @@ mod tests {
             let required = tool.input_schema.get("required").and_then(Value::as_array).cloned().unwrap_or_default();
             assert!(required.contains(&json!("session")), "{}", tool.name);
             assert!(tool.input_schema["properties"].get("session").is_some(), "{}", tool.name);
-            // ブランドの方針: ツールの説明で VectorCraft を名乗らない（docs/design-policy.md 9章）
+            // Brand policy: tool descriptions don't present themselves as VectorCraft (docs/design-policy.md chapter 9)
             let description = tool.description.as_deref().unwrap_or_default();
             assert!(!description.contains("VectorCraft"), "{}: {description}", tool.name);
         }

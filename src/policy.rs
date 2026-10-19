@@ -1,27 +1,27 @@
-//! エンジンに渡すコマンドの許可リスト（既定で拒否）。
+//! The allowlist of commands passed to the engine (denied by default).
 //!
-//! ArtServer のツールも VectorCraft のツール（GuardedBackend 経由）も、エンジン実行境界で
-//! ここを通る。プロセス全体の状態を変えるコマンドやファイルシステムに触れるコマンドは
-//! ここに載せない（docs/design-policy.md 4.7節、6.2節）。
+//! Both ArtServer's tools and VectorCraft's tools (through GuardedBackend) pass through here at the engine
+//! execution boundary. Commands that change process-wide state or touch the file system are not listed
+//! here (docs/design-policy.md sections 4.7 and 6.2).
 
 use serde_json::Value;
 
-/// コマンドを呼ぶ側。
+/// Who calls a command.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Caller {
-    /// ArtServer 自身のツール
+    /// ArtServer's own tools
     ArtServer,
-    /// VectorCraft のツール。`command_run` などで AI が直接指定したコマンドを含む
+    /// VectorCraft's tools, including commands the AI names directly through `command_run` and the like
     VectorCraftTool,
 }
 
-/// ArtServer 自身のツールだけが使うコマンド。読み込める形式と、書き出しの受け渡しを
-/// ArtServer で管理するため、VectorCraft のツールからは使わせない。
+/// Commands only ArtServer's own tools use. ArtServer manages which formats can be opened and how exports
+/// are delivered, so VectorCraft's tools may not use them.
 const ARTSERVER_ONLY: &[&str] = &["file.new", "document.open", "document.export"];
 
-/// どちらからも使えるコマンド。
+/// Commands both may use.
 const SHARED: &[&str] = &[
-    // draw_shape / draw_path / set_paint（塗り・線・破線・不透明度・名前・効果）
+    // draw_shape / draw_path / set_paint (fill, stroke, dashes, opacity, name, effects)
     "shape.rectangle",
     "shape.ellipse",
     "shape.polygon",
@@ -44,7 +44,7 @@ const SHARED: &[&str] = &[
     "text.create",
     "text.createInPath",
     "type.pathOptions",
-    // pathfinder（選択してから合成する）
+    // pathfinder (select, then combine)
     "select.set",
     "object.pathfinder.unite",
     "object.pathfinder.minusFront",
@@ -60,14 +60,14 @@ const SHARED: &[&str] = &[
     "graph.create",
     "object.textWrap.make",
     "object.textWrap.release",
-    // 文書の状態、取り消し・やり直し
+    // Document state, undo and redo
     "document.inspect",
     "document.node",
     "edit.undo",
     "edit.redo",
-    // フォント（list_fonts）
+    // Fonts (list_fonts)
     "text.fontList",
-    // ここから下は command_run などで使えるもの。文字の編集
+    // From here on, commands for command_run and the like. Editing text
     "text.setText",
     "text.setStyle",
     "text.setFormat",
@@ -79,11 +79,11 @@ const SHARED: &[&str] = &[
     "type.orientation.horizontal",
     "type.convertToAreaType",
     "type.convertToPointType",
-    // 文字とフォントの確認（読み取りだけ）
+    // Checking text and fonts (read only)
     "text.getRange",
     "text.fonts",
     "text.missingFonts",
-    // 選択・重なり順・整列
+    // Selection, stacking order, alignment
     "select.add",
     "select.none",
     "select.all",
@@ -94,7 +94,7 @@ const SHARED: &[&str] = &[
     "object.align",
     "object.distribute",
     "object.transform",
-    // グループ・削除・複製・レイヤー
+    // Groups, deletion, duplication, layers
     "object.group",
     "object.ungroup",
     "edit.clear",
@@ -105,24 +105,24 @@ const SHARED: &[&str] = &[
     "layer.delete",
 ];
 
-/// 書き出しを許す形式。
+/// Formats allowed for export.
 pub const EXPORT_FORMATS: &[&str] = &["svg", "pdf", "png"];
 
-/// ファイルシステムの場所を指しうる引数。値が文字列なら断る。`text.createInPath` の `path`
-/// のように図形の id（数値）を取るものは通す。
+/// Arguments that may name a place in the file system. Refused when the value is a string. Ones that take a
+/// shape id (a number), such as `path` of `text.createInPath`, pass.
 const PATH_KEYS: &[&str] = &["path", "paths", "folder", "destination", "destinationFolder", "file", "files"];
 
-/// `caller` が `command` を使ってよいか。
+/// May `caller` use `command`?
 pub fn is_allowed(command: &str, caller: Caller) -> bool {
     SHARED.contains(&command) || (caller == Caller::ArtServer && ARTSERVER_ONLY.contains(&command))
 }
 
-/// 許可リストのすべてのコマンド。
+/// Every command on the allowlist.
 pub fn allowed_commands() -> impl Iterator<Item = &'static str> {
     ARTSERVER_ONLY.iter().chain(SHARED).copied()
 }
 
-/// `caller` が `command` を `params` で実行してよいか。だめなら理由を返す。
+/// May `caller` run `command` with `params`? If not, returns the reason.
 pub fn check(command: &str, params: &Value, caller: Caller) -> Result<(), String> {
     if !is_allowed(command, caller) {
         return Err(format!("command `{command}` is not allowed"));
@@ -146,7 +146,7 @@ pub fn check(command: &str, params: &Value, caller: Caller) -> Result<(), String
                 return Err("only SVG data (`name` ending in .svg with `dataBase64`) may be opened".to_string());
             }
         }
-        // インストールされたプラグイン（WebAssembly）を動かす効果は使わせない
+        // Effects that run installed plug-ins (WebAssembly) are not allowed
         "effect.apply" if map.get("effect").and_then(Value::as_str).is_some_and(|e| e.starts_with("plugin.")) => {
             return Err("plug-in effects are not available on this server".to_string());
         }
@@ -155,7 +155,7 @@ pub fn check(command: &str, params: &Value, caller: Caller) -> Result<(), String
     Ok(())
 }
 
-/// ファイルの場所として読める値か（文字列、または文字列を含む配列）。
+/// Can the value be read as a file location (a string, or an array containing strings)?
 fn names_a_file(value: &Value) -> bool {
     match value {
         Value::String(_) => true,
@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn every_allowed_command_exists_in_the_engine() {
-        // VectorCraft の更新で名前が変わったり消えたりしたら、ここで気づく
+        // Notices when a VectorCraft update renames or removes a command
         for id in allowed_commands() {
             assert!(vectorcraft_engine::find_command(id).is_some(), "the engine has no command `{id}`");
         }

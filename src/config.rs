@@ -1,4 +1,4 @@
-//! 起動設定。CLI 引数と環境変数から読み、検証済みの [`Config`] にする。
+//! Startup settings. Read from CLI arguments and environment variables into a validated [`Config`].
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -6,112 +6,112 @@ use std::time::Duration;
 
 use clap::Parser;
 
-/// アクセストークンの最小長。推測されにくい長さを求める。
+/// Minimum length of the access token, so that it is hard to guess.
 const MIN_TOKEN_LEN: usize = 32;
 
-/// コマンドライン引数。値の多くは環境変数でも渡せる。
+/// Command-line arguments. Most values can also be given as environment variables.
 #[derive(Debug, Parser)]
 #[command(name = "artserver", version, about = "Headless vector graphics server driven over MCP (Streamable HTTP)")]
 pub struct Cli {
-    /// 待ち受けアドレス。既定はループバックのみ
+    /// Listen address. Loopback only by default
     #[arg(long, env = "ARTSERVER_BIND", default_value = "127.0.0.1:8471")]
     pub bind: SocketAddr,
 
-    /// ループバック以外での待ち受けを許可する（TLS を終端するリバースプロキシの背後に置く場合だけ使う）
+    /// Allow listening on non-loopback addresses (only behind a reverse proxy that terminates TLS)
     #[arg(long)]
     pub allow_public_bind: bool,
 
-    /// アクセストークンを書いたファイル。未指定なら環境変数 ARTSERVER_TOKEN を使う
+    /// File containing the access token. If not given, the environment variable ARTSERVER_TOKEN is used
     #[arg(long, env = "ARTSERVER_TOKEN_FILE")]
     pub token_file: Option<PathBuf>,
 
-    /// 受け付ける Host ヘッダ（カンマ区切り）
+    /// Host headers to accept (comma-separated)
     #[arg(long, env = "ARTSERVER_ALLOWED_HOSTS", value_delimiter = ',', default_value = "localhost,127.0.0.1,::1")]
     pub allowed_hosts: Vec<String>,
 
-    /// 受け付ける Origin（カンマ区切り）。空なら Origin ヘッダの付いた要求をすべて拒否する
+    /// Origins to accept (comma-separated). If empty, every request with an Origin header is refused
     #[arg(long, env = "ARTSERVER_ALLOWED_ORIGINS", value_delimiter = ',')]
     pub allowed_origins: Vec<String>,
 
-    /// 同時に持てる作業セッション数
+    /// Number of working sessions held at once
     #[arg(long, env = "ARTSERVER_MAX_SESSIONS", default_value_t = Limits::default().max_sessions)]
     pub max_sessions: usize,
 
-    /// 使われない作業セッションを破棄するまでの秒数
+    /// Seconds before an unused working session is discarded
     #[arg(long, env = "ARTSERVER_SESSION_IDLE_SECS", default_value_t = Limits::default().session_idle.as_secs())]
     pub session_idle_secs: u64,
 
-    /// 1回のツール呼び出しの制限時間（秒）。超えるとエンジンにキャンセルを求める
+    /// Time limit for one tool call (seconds). Past it, the engine is asked to cancel
     #[arg(long, env = "ARTSERVER_CALL_TIMEOUT_SECS", default_value_t = Limits::default().call_timeout.as_secs())]
     pub call_timeout_secs: u64,
 
-    /// 要求本文の上限（バイト）
+    /// Maximum request body size (bytes)
     #[arg(long, env = "ARTSERVER_MAX_BODY_BYTES", default_value_t = Limits::default().max_body_bytes)]
     pub max_body_bytes: usize,
 
-    /// 1つの作業セッションで同時に開ける文書数
+    /// Number of documents one working session can have open at once
     #[arg(long, env = "ARTSERVER_MAX_DOCUMENTS", default_value_t = Limits::default().max_documents)]
     pub max_documents: usize,
 
-    /// 文書1つあたりの Undo 履歴の上限（MiB）
+    /// Undo history limit per document (MiB)
     #[arg(long, env = "ARTSERVER_HISTORY_MIB", default_value_t = Limits::default().history_bytes / MIB)]
     pub history_mib: usize,
 
-    /// 書き出し1回あたりの描画スレッド数（0: 呼び出したスレッドだけで描く）
+    /// Rendering threads per export (0: render on the calling thread only)
     #[arg(long, env = "ARTSERVER_RENDER_THREADS", default_value_t = Limits::default().render_threads)]
     pub render_threads: u16,
 
-    /// 大きい書き出し結果を預かっておく秒数（docs/design-policy.md 4.6節）
+    /// Seconds large exports are kept (docs/design-policy.md section 4.6)
     #[arg(long, env = "ARTSERVER_FILE_TTL_SECS", default_value_t = Limits::default().file_ttl.as_secs())]
     pub file_ttl_secs: u64,
 
-    /// 預かる書き出し結果の合計の上限（MiB）。メモリに持つ
+    /// Total size limit of the kept exports (MiB). Kept in memory
     #[arg(long, env = "ARTSERVER_MAX_FILE_MIB", default_value_t = Limits::default().max_file_bytes / MIB)]
     pub max_file_mib: usize,
 
-    /// OS に入っているフォントに加えて使うフォントのフォルダ（カンマ区切り）。組織で用意した
-    /// フォントを置く用途（docs/design-policy.md 1.1節）
+    /// Font folders to use in addition to the fonts installed in the OS (comma-separated), for fonts the
+    /// organization provides (docs/design-policy.md section 1.1)
     #[arg(long, env = "ARTSERVER_FONT_DIRS", value_delimiter = ',')]
     pub font_dirs: Vec<PathBuf>,
 
-    /// 外から見える ArtServer の URL（例: https://example.co.jp/artserver）。書き出し結果の URL を
-    /// これの後ろに /files/… を付けて作る。リバースプロキシの後ろで使うときに指定する。未指定なら
-    /// 届いた Host と X-Forwarded-Proto から作る。ホスト名は --allowed-hosts に自動で加える
+    /// ArtServer's URL as seen from outside (e.g. https://example.com/artserver). Export URLs are made by adding
+    /// /files/… to it. Give it when running behind a reverse proxy. If not given, URLs are made from the incoming
+    /// Host and X-Forwarded-Proto. Its host name is added to --allowed-hosts automatically
     #[arg(long, env = "ARTSERVER_PUBLIC_URL")]
     pub public_url: Option<String>,
 }
 
 const MIB: usize = 1024 * 1024;
 
-/// 検証済みの設定。
+/// Validated settings.
 #[derive(Clone, Debug)]
 pub struct Config {
     pub bind: SocketAddr,
     pub token: String,
     pub allowed_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,
-    /// 追加で読み込むフォントのフォルダ（絶対パス）
+    /// Extra font folders to load (absolute paths)
     pub font_dirs: Vec<PathBuf>,
-    /// 外から見える ArtServer の URL（末尾の / なし）。書き出し結果の URL に使う
+    /// ArtServer's URL as seen from outside (without a trailing /). Used for export URLs
     pub public_url: Option<String>,
     pub limits: Limits,
 }
 
-/// 資源の上限。
+/// Resource limits.
 #[derive(Clone, Debug)]
 pub struct Limits {
     pub max_sessions: usize,
     pub session_idle: Duration,
     pub call_timeout: Duration,
     pub max_body_bytes: usize,
-    /// 1つの作業セッションで実行待ちにできる要求の数。超えると「混雑中」を返す
+    /// Requests one working session can have waiting. Past that, "busy" is returned
     pub queue_depth: usize,
     pub max_documents: usize,
     pub history_bytes: usize,
     pub render_threads: u16,
-    /// 大きい書き出し結果を預かっておく時間
+    /// How long large exports are kept
     pub file_ttl: Duration,
-    /// 預かる書き出し結果の合計の上限（バイト）
+    /// Total size limit of the kept exports (bytes)
     pub max_file_bytes: usize,
 }
 
@@ -133,7 +133,7 @@ impl Default for Limits {
 }
 
 impl Cli {
-    /// 引数を検証し、トークンを読み込んで [`Config`] にする。
+    /// Validates the arguments, reads the token and makes a [`Config`].
     pub fn resolve(self) -> Result<Config, String> {
         if !self.bind.ip().is_loopback() && !self.allow_public_bind {
             return Err(format!(
@@ -147,13 +147,13 @@ impl Cli {
         };
         let token = token.trim().to_string();
         validate_token(&token)?;
-        // rmcp は Host の許可リストが空だとすべての Host を通すので、空は認めない
+        // rmcp lets every Host through when its Host allowlist is empty, so an empty list is not accepted
         let mut allowed_hosts = non_empty(self.allowed_hosts);
         if allowed_hosts.is_empty() {
             return Err("--allowed-hosts must name at least one host".to_string());
         }
         let public_url = public_url(self.public_url)?;
-        // 外から見える名前として宣言したホストは、リバースプロキシがそのまま Host に渡しても通す
+        // A host declared as the outside name passes even when the reverse proxy passes it on as Host unchanged
         if let Some((_, host)) = &public_url
             && !allowed_hosts.iter().any(|h| h.eq_ignore_ascii_case(host))
         {
@@ -184,13 +184,13 @@ impl Cli {
     }
 }
 
-/// `--public-url` を確かめ、（末尾の / を除いた URL, 小文字のホスト名）にする。http か https の
-/// 完全な URL だけを認め、利用者情報・クエリ・フラグメントは認めない。
+/// Checks `--public-url` and makes it (the URL without a trailing /, the host name in lower case). Only a
+/// full http or https URL is accepted, without user info, query or fragment.
 fn public_url(raw: Option<String>) -> Result<Option<(String, String)>, String> {
     let Some(raw) = raw.map(|r| r.trim().to_string()).filter(|r| !r.is_empty()) else {
         return Ok(None);
     };
-    let invalid = || format!("--public-url must be an absolute http or https URL without a query, such as https://example.co.jp/artserver: {raw}");
+    let invalid = || format!("--public-url must be an absolute http or https URL without a query, such as https://example.com/artserver: {raw}");
     let uri: http::Uri = raw.parse().map_err(|_| invalid())?;
     let authority = uri
         .authority()
@@ -200,7 +200,7 @@ fn public_url(raw: Option<String>) -> Result<Option<(String, String)>, String> {
     Ok(Some((raw.trim_end_matches('/').to_string(), host)))
 }
 
-/// フォントのフォルダを確かめ、絶対パスにする。存在しないフォルダは起動時の誤りとして知らせる。
+/// Checks the font folders and makes them absolute. A folder that doesn't exist is reported as a startup error.
 fn font_dirs(dirs: Vec<PathBuf>) -> Result<Vec<PathBuf>, String> {
     dirs.into_iter()
         .filter(|d| !d.as_os_str().is_empty())
@@ -216,7 +216,7 @@ fn non_empty(values: Vec<String>) -> Vec<String> {
     values.into_iter().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
 }
 
-/// トークンが短すぎないか、ヘッダに載せられる文字だけか。
+/// Is the token long enough, and made only of characters a header can carry?
 pub fn validate_token(token: &str) -> Result<(), String> {
     if token.len() < MIN_TOKEN_LEN {
         return Err(format!("the access token must be at least {MIN_TOKEN_LEN} characters"));
@@ -294,22 +294,18 @@ mod tests {
         let token = dir.path().join("token");
         std::fs::write(&token, "t".repeat(40)).unwrap();
         let token = token.to_str().unwrap();
-        let config = cli(&["--token-file", token, "--public-url", "https://Art.Example.co.jp/artserver/"])
+        let config = cli(&["--token-file", token, "--public-url", "https://Art.Example.com/artserver/"])
             .resolve()
             .unwrap();
-        assert_eq!(config.public_url.as_deref(), Some("https://Art.Example.co.jp/artserver"));
-        assert!(
-            config.allowed_hosts.iter().any(|h| h == "art.example.co.jp"),
-            "{:?}",
-            config.allowed_hosts
-        );
+        assert_eq!(config.public_url.as_deref(), Some("https://Art.Example.com/artserver"));
+        assert!(config.allowed_hosts.iter().any(|h| h == "art.example.com"), "{:?}", config.allowed_hosts);
         assert!(cli(&["--token-file", token]).resolve().unwrap().public_url.is_none());
         for bad in [
-            "ftp://example.co.jp",
+            "ftp://example.com",
             "/artserver",
-            "example.co.jp",
-            "https://example.co.jp/?a=1",
-            "https://user@example.co.jp",
+            "example.com",
+            "https://example.com/?a=1",
+            "https://user@example.com",
         ] {
             let err = cli(&["--token-file", token, "--public-url", bad]).resolve().unwrap_err();
             assert!(err.contains("--public-url"), "{bad}: {err}");

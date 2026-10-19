@@ -1,8 +1,8 @@
-//! GuardedBackend: VectorCraft のツールがエンジンを呼ぶための窓口（`vectorcraft_mcp::Backend`）。
+//! GuardedBackend: the gateway through which VectorCraft's tools call the engine (`vectorcraft_mcp::Backend`).
 //!
-//! VectorCraft のツールは、エンジンをすべてこの窓口越しに呼ぶ。ここで ArtServer の許可リストと
-//! 引数の検査を通してから実行し、画面の操作やファイルの読み書きの窓口は断る
-//! （docs/design-policy.md 4.7節）。作業セッションの実行スレッドの上で動く。
+//! VectorCraft's tools call the engine only through this gateway. It runs each call past ArtServer's allowlist
+//! and argument checks before executing it, and refuses the gateways for operating the UI and for reading and
+//! writing files (docs/design-policy.md section 4.7). It runs on a working session's execution thread.
 
 use serde_json::{Value, json};
 use vectorcraft_engine::Session;
@@ -11,7 +11,7 @@ use vectorcraft_mcp::Backend;
 use crate::engine_host::{EngineLimits, execute_checked};
 use crate::policy::{self, Caller};
 
-/// プレビューの描画で許す倍率の範囲（VectorCraft の描画と同じ）。
+/// The range of scales allowed when rendering a preview (the same as VectorCraft's renderer).
 const RENDER_SCALE: (f64, f64) = (0.01, 16.0);
 
 pub(crate) struct GuardedBackend<'a> {
@@ -28,7 +28,7 @@ impl<'a> GuardedBackend<'a> {
         execute_checked(self.session, command, params, self.limits, Caller::VectorCraftTool).map_err(|e| e.to_string())
     }
 
-    /// 許可リストにあるコマンドだけの一覧（`command_list` の元になる）。
+    /// The list of only the commands on the allowlist (the source of `command_list`).
     fn commands(&self) -> Value {
         let allowed = self
             .session
@@ -40,8 +40,8 @@ impl<'a> GuardedBackend<'a> {
         Value::Array(allowed)
     }
 
-    /// `render_preview` のための描画。アートボード1つを PNG にする。決まった引数でエンジンの
-    /// 書き出しを呼ぶだけなので、ファイルには触れない。
+    /// Rendering for `render_preview`: one artboard as PNG. It only calls the engine's export with fixed
+    /// arguments, so it doesn't touch files.
     fn render(&mut self, params: &Value) -> Result<Value, String> {
         let scale = params
             .get("scale")

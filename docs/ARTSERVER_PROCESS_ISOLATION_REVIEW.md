@@ -1,103 +1,103 @@
-# ArtServer 設計レビュー — 将来のプロセス分離について
+# ArtServer Design Review — On Future Process Isolation
 
-- 作成日: 2026-10-17
-- 対象プロジェクト: **ArtServer**
-- 想定配置先: `~/MyTasks/RoundShape/ArtServer/docs/PROCESS_ISOLATION_REVIEW.md`
-- レビュー対象: `design-policy.md`（「ArtServer 設計方針」）、`architecture.md`（「ArtServer アーキテクチャ調査・方式決定（Phase 0）」）
-- **重要: この文書は将来の開発に向けた設計レビューであり、Phase 1（MVP）でのプロセス分離の実装を要求するものではない。**
+- Created: 2026-10-17
+- Target project: **ArtServer**
+- Intended location: `~/MyTasks/RoundShape/ArtServer/docs/PROCESS_ISOLATION_REVIEW.md`
+- Documents reviewed: `design-policy.md` ("ArtServer Design Policy"), `architecture.md` ("ArtServer Architecture Investigation and Approach Decision (Phase 0)")
+- **Important: This document is a design review for future development. It does not require process isolation to be implemented in Phase 1 (MVP).**
 
-## 1. 結論
+## 1. Conclusion
 
-**現在の案A-2（`vectorcraft-engine` を直接組み込み、ArtServer独自のMCP層を設ける）は妥当であり、変更不要。**
+**The current Option A-2 (embed `vectorcraft-engine` directly and add ArtServer's own MCP layer) is sound and needs no change.**
 
-そのうえで、インターネット経由で**信頼境界の異なる複数ユーザー**にサービスを公開する段階では、**描画エンジンの実行環境をOSプロセス単位で分離する方針を推奨する**。
+On that basis, at the stage where the service is exposed over the internet to **multiple users with different trust boundaries**, **we recommend the policy of isolating the drawing engine's execution environment per OS process**.
 
-開発順序は次のとおりとする。
+The development order is as follows.
 
-1. **Phase 1（いま）**: 単一ArtServerプロセス内で、セッションごとに専用スレッドを用いる。既存計画どおり、ローカル・少数の信頼できる利用者向けのMVPを完成させる。
-2. **Phase 2（必要な機能を拡充）**: エンジン機能と互換性を検証しつつ、同じ責務分離を維持する。**プロセス分離の先行実装は行わない**。
-3. **Phase 3（複数ユーザーへの公開に先立って）**: プロセス分離を実装し、安全性・性能・運用を検証する。1セッション1プロセスを**最初の比較候補**とし、負荷と利用形態を踏まえてワーカープール方式等も評価する。
+1. **Phase 1 (now)**: Use a dedicated thread per session inside a single ArtServer process. As in the existing plan, complete the MVP for local use by a small number of trusted users.
+2. **Phase 2 (expand the needed features)**: While verifying engine features and compatibility, keep the same separation of responsibilities. **Do not implement process isolation ahead of time**.
+3. **Phase 3 (before exposure to multiple users)**: Implement process isolation and verify safety, performance and operations. Take one process per session as **the first candidate for comparison**, and also evaluate approaches such as a worker pool based on load and usage patterns.
 
-**「後で分離するために、今から複雑な分離機構を作る」必要はない。今は差し替えられる境界を保ち、実装は将来に回す。**
+**There is no need to "build a complex isolation mechanism now so that we can isolate later". For now, keep a boundary that can be swapped out, and leave the implementation for the future.**
 
-## 2. プロセス分離を推奨する理由
+## 2. Why process isolation is recommended
 
-レビュー対象の調査結果によれば、VectorCraftのエンジンにはセッション単位で閉じない状態が存在する。`architecture.md` §2.5には、カラー設定・ICCプロファイル・フォントDB・プラグイン登録などのプロセス共有状態が列挙されている。また、§4.4ではプロセス内実行の限界が明記されている。
+According to the investigation results under review, VectorCraft's engine has state that is not contained within a session. `architecture.md` §2.5 lists process-wide shared state such as color settings, ICC profiles, the font DB and plugin registration. Also, §4.4 clearly states the limits of in-process execution.
 
-| 観点 | スレッド分離（Phase 1） | プロセス分離（将来） |
+| Aspect | Thread isolation (Phase 1) | Process isolation (future) |
 |---|---|---|
-| 文書・Undoなどの通常の作業状態 | 各Sessionを分離できる | 分離できる |
-| グローバル設定・共有キャッシュ | プロセス全体で共有され得る | 原則としてワーカーごとに独立 |
-| スタックオーバーフロー等 | サーバー全体に影響し得る | 原則として当該ワーカー内に限定可能 |
-| 協調キャンセルできない処理 | 安全な強制停止が難しい | ワーカーを終了させて停止できる |
-| OSによる資源制御・権限制限 | 制御しにくい | ワーカー単位で適用しやすい |
-| 起動・メモリ・運用コスト | 低め | 高め |
+| Normal working state such as documents and Undo | Each Session can be isolated | Can be isolated |
+| Global settings and shared caches | May be shared across the whole process | As a rule, independent per worker |
+| Stack overflows, etc. | May affect the whole server | As a rule, can be confined to that worker |
+| Work that cannot be stopped by cooperative cancellation | Hard to force-stop safely | Can be stopped by terminating the worker |
+| OS resource control and privilege restriction | Hard to control | Easy to apply per worker |
+| Startup, memory and operating cost | Lower | Higher |
 
-**注意:** プロセスが違うだけで安全になるわけではない。実際のマルチテナント運用では、ワーカーごとのOS権限、実行ディレクトリ、ファイルアクセス、CPU・メモリ制限、ネットワーク制限等の設計が必要になる。
+**Note:** Running in a separate process does not by itself make things safe. Real multi-tenant operation needs a design for per-worker OS privileges, run directory, file access, CPU and memory limits, network restrictions, etc.
 
-## 3. 今の設計で維持したいこと（Phase 1）
+## 3. What to keep in the current design (Phase 1)
 
-`design-policy.md` §4、§5 と `architecture.md` §4.1〜4.4 の方針は維持する。
+Keep the policies in `design-policy.md` §4 and §5 and `architecture.md` §4.1–4.4.
 
-### 3.1 実行器の責務境界を明確にする
+### 3.1 Make the executor's responsibility boundary clear
 
-MCP/HTTPの層から直接 `vectorcraft_engine::Session` を操作させず、`session` / `engine_host` 層に集約する。
+Do not let the MCP/HTTP layer operate `vectorcraft_engine::Session` directly; gather that in the `session` / `engine_host` layers.
 
 ```text
 MCP / HTTP
     │
     ▼
-ツール・ポリシー層
+Tool / policy layer
     │
     ▼
-セッション管理
+Session management
     │
     ▼
-エンジン実行境界（engine_host）
+Engine execution boundary (engine_host)
     │
-    ├─ 現在: セッション専用スレッド
+    ├─ Now: dedicated thread per session
     │
-    └─ 将来: ワーカープロセス（Phase 3）
+    └─ Future: worker process (Phase 3)
     ▼
 vectorcraft-engine
 ```
 
-ここでいう「境界」は**役割の分離**である。現時点で `ThreadExecutor` と `ProcessExecutor` の2実装を作る必要はない。Rustの `trait` 化も、現在のコードの自然な分離に役立つ場合に限って採用する。将来の実装のためだけに抽象化を増やさない。
+The "boundary" here means **separation of roles**. There is no need to build two implementations, `ThreadExecutor` and `ProcessExecutor`, at this point. Turning it into a Rust `trait` is also adopted only if it helps the natural separation of the current code. Do not add abstractions only for a future implementation.
 
-### 3.2 実行境界を越えるデータを単純に保つ
+### 3.2 Keep data that crosses the execution boundary simple
 
-コマンドの要求・結果・エラーは、できるだけ**所有権が明確なデータ**（コマンドID、JSON引数、結果、セッション識別子等）としてやり取りする。
+Pass command requests, results and errors as **data with clear ownership** (command ID, JSON arguments, results, session identifier, etc.) as much as possible.
 
-- HTTP層にエンジン内部の `Session`、文書オブジェクト、ロックなどを露出させない。
-- エンジン固有のオブジェクト参照をMCPのAPI仕様に組み込まない。
-- 将来、プロセス間通信でシリアライズが必要になる可能性を意識する。ただし**今、IPCプロトコルを定義・実装する必要はない**。
-- 同一セッション内の編集要求は順序が重要なので、現行設計どおり直列化する。
+- Do not expose the engine's internal `Session`, document objects, locks, etc. to the HTTP layer.
+- Do not build engine-specific object references into the MCP API specification.
+- Keep in mind that serialization may be needed for inter-process communication in the future. However, **there is no need to define or implement an IPC protocol now**.
+- Order matters for edit requests within the same session, so serialize them as in the current design.
 
-### 3.3 MVPのセキュリティ制約はそのまま維持する
+### 3.3 Keep the MVP's security constraints as they are
 
-`design-policy.md` §6の既定値を守る。
+Follow the defaults in `design-policy.md` §6.
 
-- `127.0.0.1` のみで待ち受ける。
-- Bearerトークン認証を必須とする。
-- エンジンコマンドは許可リスト方式とする。
-- MVPではファイルパス指定の入出力を公開せず、Base64で受け渡す。
-- セッション数、キュー、リクエスト本文サイズ、タイムアウト等に上限を設ける。
-- ログに他セッションの情報や機密情報を混入させない。
+- Listen only on `127.0.0.1`.
+- Require Bearer token authentication.
+- Use an allowlist for engine commands.
+- In the MVP, do not expose input/output by file path; pass data as Base64.
+- Set upper limits on the number of sessions, queues, request body size, timeouts, etc.
+- Do not let other sessions' information or confidential information get into logs.
 
-**この時点で不特定多数向けのインターネット公開を行わない。** プロセス内で防げない障害と共有状態の制約は、READMEに既知の制限として明記する。
+**Do not offer public internet exposure to untrusted users at this point.** State the failures that cannot be prevented within the process and the limits of shared state clearly in the README as known limitations.
 
-## 4. Phase 3で検討する実装案（今は未着手）
+## 4. Implementation options to consider in Phase 3 (not started yet)
 
-### 4.1 基本形
+### 4.1 Basic form
 
 ```text
-              インターネット
+               Internet
                    │
                    ▼
-          ArtServer（フロント）
-           HTTP / MCP / 認証
+         ArtServer (front end)
+           HTTP / MCP / auth
                    │
-             セッション管理
+          Session management
                    │
            ┌───────┼───────┐
            ▼       ▼       ▼
@@ -107,58 +107,58 @@ vectorcraft-engine
          Engine  Engine  Engine
 ```
 
-ワーカーにだけ `vectorcraft-engine` を読み込ませ、フロントはセッションのルーティング、認証、要求制限、結果応答を担う。ワーカーが異常終了した場合は当該セッションを失敗扱いにし、フロントは継続する構成を目指す。
+Only the workers load `vectorcraft-engine`; the front end handles session routing, authentication, request limits and returning results. Aim for a structure where, if a worker terminates abnormally, that session is treated as failed and the front end keeps running.
 
-### 4.2 分離単位の選定
+### 4.2 Choosing the unit of isolation
 
-- **1セッション1プロセス**：理解しやすく、障害境界が明確。最初の実装候補。
-- **1ユーザー1プロセス**：一人が複数セッションを使う際の負荷削減余地があるが、同一ユーザー内のセッションは障害・共有状態を共にする。
-- **ワーカープール**：起動コストの削減余地がある一方、再利用前の状態初期化やデータ残留防止が難しい。異なる信頼境界のセッションを同じプロセスに安易に混在させない。
+- **One process per session**: easy to understand, with a clear failure boundary. The first implementation candidate.
+- **One process per user**: there is room to reduce load when one person uses several sessions, but sessions of the same user share failures and shared state.
+- **Worker pool**: there is room to reduce startup cost, but resetting state before reuse and preventing leftover data are hard. Do not carelessly mix sessions with different trust boundaries in the same process.
 
-**1セッション1プロセスを永久の仕様とは決めない。** 利用人数・同時実行数・文書サイズ・フォント初期化コスト・メモリ消費を測定して選択する。
+**Do not fix one process per session as a permanent specification.** Choose by measuring the number of users, concurrency, document size, font initialization cost and memory use.
 
-### 4.3 Phase 3開始時に設計するもの
+### 4.3 What to design at the start of Phase 3
 
-1. ワーカー起動・停止、アイドル回収、クラッシュ検知、再起動とセッション失効。
-2. IPC（JSON等の候補比較）、要求ID、順序保証、タイムアウト、キャンセル、エラー通知。
-3. セッションごとのデータ保管場所とアクセス権限、プロセス資源制限。
-4. プロセスごとのフォント・設定・共有リソースの初期化コスト。
-5. ドキュメント状態の永続化・復旧方針（クラッシュ後の再開を約束するか）。
-6. 監視・ログ・メトリクス、バックプレッシャー、同時処理数の上限。
-7. Linux等の本番実行環境でのOSレベル隔離。必要ならコンテナ化も比較。
+1. Worker start and stop, idle reclaim, crash detection, restart and session expiry.
+2. IPC (comparing candidates such as JSON), request IDs, ordering guarantees, timeouts, cancellation, error reporting.
+3. Per-session data storage location and access permissions, process resource limits.
+4. Per-process initialization cost of fonts, settings and shared resources.
+5. Policy for persisting and recovering document state (whether to promise resumption after a crash).
+6. Monitoring, logs, metrics, backpressure, and the upper limit on concurrent processing.
+7. OS-level isolation in production environments such as Linux. If needed, also compare containerization.
 
-**補足:** OSプロセスによる分離と、Dockerコンテナによる分離は同義ではない。コンテナは配布・運用・追加隔離の選択肢であり、当初から必須とするものではない。
+**Additional note:** Isolation by OS process and isolation by Docker container are not the same thing. Containers are an option for distribution, operations and additional isolation, and are not required from the start.
 
-## 5. Phase 3への移行判断の目安
+## 5. Guidelines for deciding to move to Phase 3
 
-次の条件が現実の要件となった時点で、プロセス分離に着手する。
+Start on process isolation when the following conditions become real requirements.
 
-- 相互に信頼できない外部ユーザーが同じArtServerを利用する。
-- エンジンの異常終了・長時間処理が他のユーザーに影響しては困る。
-- 同時セッション数や負荷が増え、資源をユーザー／セッション単位で制御する必要がある。
-- ファイルパスを扱う入出力、ユーザー持ち込みのデータ・フォントなど、隔離の重要性が高い機能を公開する。
+- External users who do not trust each other use the same ArtServer.
+- Abnormal engine termination or long-running work must not affect other users.
+- The number of concurrent sessions or the load grows, and resources must be controlled per user/session.
+- Features where isolation matters more are exposed, such as input/output with file paths, or user-supplied data and fonts.
 
-将来の移行確認では「ワーカーが落ちてもフロントが継続する」「他セッションの状態・ファイルに触れない」「制限超過時にワーカーを停止できる」を重点的に試験する。
+When checking the future migration, focus testing on "the front end keeps running even if a worker crashes", "no access to other sessions' state or files", and "a worker can be stopped when it exceeds its limits".
 
-## 6. レビュー判定・Claude Codeへの指示
+## 6. Review verdict and instructions for Claude Code
 
-### 判定
+### Verdict
 
-**条件付きで設計方針に賛成。現行のPhase 1の実装計画を変える必要はない。**
+**Agree with the design policy, with conditions. There is no need to change the current Phase 1 implementation plan.**
 
-条件は次の3点のみ。
+There are only the following three conditions.
 
-1. **MCP/HTTP層とエンジン実行層の責務を分ける。**
-2. **MVPのローカル利用・信頼できるクライアントという前提を文書化する。**
-3. **複数の信頼境界を持つユーザーへ公開する前にプロセス分離とOSレベルの制限を設計・検証する。**
+1. **Separate the responsibilities of the MCP/HTTP layer and the engine execution layer.**
+2. **Document the assumption that the MVP is for local use with trusted clients.**
+3. **Design and verify process isolation and OS-level restrictions before exposing the service to users across multiple trust boundaries.**
 
-### Claude Code CLI向けの実施指示
+### Instructions for Claude Code CLI
 
-> 本レビューは、将来の複数ユーザー公開に向けた設計上の注意事項です。**Phase 1ではプロセス分離を実装しないでください。** 既存の案A-2とセッション別スレッド方式を維持してください。MCP層から `Session` の内部実装が漏れないように、`engine_host` の責務だけを明確化してください。必要以上にtrait・IPC・ワーカーマネージャーを先行実装しないでください。まずMVPのビルドとエンドツーエンドの動作確認を優先し、Phase 3に向けた未解決事項はドキュメントに残してください。
+> This review contains design notes for future exposure to multiple users. **Do not implement process isolation in Phase 1.** Keep the existing Option A-2 and the thread-per-session approach. Only clarify the responsibilities of `engine_host` so that the internal implementation of `Session` does not leak into the MCP layer. Do not implement traits, IPC or a worker manager ahead of time beyond what is needed. First give priority to building the MVP and checking that it works end to end, and record the open issues for Phase 3 in the documentation.
 
-## 7. レビューの前提と確認範囲
+## 7. Assumptions and scope of this review
 
-- このレビューは**提供された2つの設計資料**に基づく。VectorCraft本体のソースコードを本レビューで独立に検証したものではない。
-- `architecture.md` 冒頭では**静的読解のみ・ビルド／テスト未実施**と明記されている。`Session: Send` などの前提はPhase 1のビルド時にコンパイラで確認すること。
-- 将来の具体的なIPC方式、OS制限、ワーカープール採用は、実装時の負荷・安全要件が分かる段階で決定する。
-- 原資料参照箇所：`design-policy.md` §§3–6, 10–12 / `architecture.md` §§2.4–2.5, 4.1–4.4, 5–6。
+- This review is based on **the two design documents provided**. This review did not independently verify the VectorCraft source code itself.
+- The beginning of `architecture.md` clearly states **static reading only; build/tests not run**. Check assumptions such as `Session: Send` with the compiler when building Phase 1.
+- The concrete IPC approach, OS restrictions and whether to adopt a worker pool in the future are decided once the load and safety requirements at implementation time are known.
+- Sections referenced in the source documents: `design-policy.md` §§3–6, 10–12 / `architecture.md` §§2.4–2.5, 4.1–4.4, 5–6.

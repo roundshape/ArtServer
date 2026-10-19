@@ -1,9 +1,9 @@
-//! エンジン実行境界。
+//! The engine execution boundary.
 //!
-//! 作業セッション1つにつき専用スレッドを1本持ち、そのスレッドだけがエンジンの `Session` を
-//! 触る。境界を越えるのは、コマンド ID・ツール名と JSON の引数・結果だけ
-//! （docs/design-policy.md 4.3節）。同じ作業セッションへの要求は届いた順に1件ずつ実行し、
-//! 待ち行列が溢れたら混雑として断る。
+//! Each working session has one dedicated thread, and only that thread touches the engine's `Session`. Only
+//! command IDs, tool names and JSON arguments and results cross the boundary (docs/design-policy.md
+//! section 4.3). Requests to the same working session run one at a time in the order they arrive; when
+//! the queue is full, they are refused as busy.
 
 use std::fmt;
 use std::sync::Arc;
@@ -19,17 +19,17 @@ use vectorcraft_mcp::ToolResult;
 use crate::backend::GuardedBackend;
 use crate::policy::{self, Caller};
 
-/// エンジンのスレッドのスタック。読み込み処理は自前の大きなスタックのスレッドを使うので、
-/// ここは通常のコマンドが足りる大きさでよい。
+/// Stack size of the engine thread. Imports run on threads of their own with large stacks, so this only
+/// needs to be big enough for ordinary commands.
 const STACK_SIZE: usize = 8 * 1024 * 1024;
 
-/// エンジンに実行させる1コマンド。
+/// One command for the engine to run.
 #[derive(Clone, Debug)]
 pub struct Step {
     pub command: &'static str,
     pub params: Value,
-    /// 引数の中の `$N.path` を、それまでのステップの結果で置き換えるか。
-    /// 利用者の文字列を参照と取り違えないよう、ツールが組み立てた引数にだけ使う。
+    /// Replace `$N.path` in the arguments with the results of the earlier steps? Used only for arguments a
+    /// tool built, so that a user's string is never mistaken for a reference.
     pub resolve_refs: bool,
 }
 
@@ -42,7 +42,7 @@ impl Step {
         }
     }
 
-    /// 前のステップの結果を参照するステップ（例: `"ids": ["$0.id"]`）。
+    /// A step that refers to the result of an earlier step (e.g. `"ids": ["$0.id"]`).
     pub fn referring(command: &'static str, params: Value) -> Self {
         Self {
             command,
@@ -52,18 +52,18 @@ impl Step {
     }
 }
 
-/// 実行の失敗。
+/// A failed run.
 #[derive(Debug)]
 pub enum HostError {
-    /// 待ち行列が一杯
+    /// The queue is full
     Busy,
-    /// 実行スレッドが止まっている
+    /// The execution thread has stopped
     Stopped,
-    /// 許可リストや引数の検査、資源の上限で断った
+    /// Refused by the allowlist, the argument checks or a resource limit
     Rejected(String),
-    /// エンジンがエラーを返した
+    /// The engine returned an error
     Engine(String),
-    /// キャンセルされた（何も変更していない）
+    /// Cancelled (nothing was changed)
     Cancelled,
 }
 
@@ -79,7 +79,7 @@ impl fmt::Display for HostError {
     }
 }
 
-/// 実行器の上限。
+/// Limits of the executor.
 #[derive(Clone, Debug)]
 pub struct EngineLimits {
     pub queue_depth: usize,
@@ -87,15 +87,15 @@ pub struct EngineLimits {
     pub history_bytes: usize,
 }
 
-/// 実行器に頼む仕事。
+/// Work for the executor.
 enum Work {
-    /// ArtServer のツールが組み立てたコマンド列
+    /// A sequence of commands built by an ArtServer tool
     Steps(Vec<Step>),
-    /// VectorCraft のツール1つ（GuardedBackend の上で動かす）
+    /// One VectorCraft tool (run on GuardedBackend)
     Tool { name: String, args: Value },
 }
 
-/// 仕事の結果。
+/// The result of the work.
 enum Done {
     Steps(Vec<Value>),
     Tool(ToolResult),
@@ -107,14 +107,14 @@ struct Job {
     reply: oneshot::Sender<Result<Done, HostError>>,
 }
 
-/// 作業セッション1つ分のエンジン実行器。落とすと実行スレッドも終わる。
+/// The engine executor of one working session. Dropping it ends the execution thread too.
 pub struct EngineHost {
     jobs: mpsc::Sender<Job>,
 }
 
 impl EngineHost {
-    /// 専用スレッドを起こし、そこで新しいエンジンの `Session` を持つ。
-    /// エンジンのファイルアクセスは常に `roots` の中に閉じ込める。
+    /// Starts a dedicated thread that holds a new engine `Session`.
+    /// The engine's file access is always confined to `roots`.
     pub fn spawn(limits: EngineLimits, roots: Arc<AutomationRoots>) -> std::io::Result<Self> {
         let (jobs, rx) = mpsc::channel(limits.queue_depth.max(1));
         std::thread::Builder::new()
@@ -124,7 +124,7 @@ impl EngineHost {
         Ok(Self { jobs })
     }
 
-    /// `steps` を順に実行し、各ステップの結果を返す。`token` を立てるとエンジンに中断を求める。
+    /// Runs `steps` in order and returns each step's result. Setting `token` asks the engine to stop.
     pub async fn run(&self, steps: Vec<Step>, token: CancelToken) -> Result<Vec<Value>, HostError> {
         match self.submit(Work::Steps(steps), token).await? {
             Done::Steps(results) => Ok(results),
@@ -132,8 +132,8 @@ impl EngineHost {
         }
     }
 
-    /// VectorCraft のツール `name` を `args` で実行する。エンジンへの呼び出しはすべて
-    /// GuardedBackend の検査を通る。
+    /// Runs VectorCraft's tool `name` with `args`. Every call into the engine goes through
+    /// GuardedBackend's checks.
     pub async fn run_tool(&self, name: String, args: Value, token: CancelToken) -> Result<ToolResult, HostError> {
         match self.submit(Work::Tool { name, args }, token).await? {
             Done::Tool(result) => Ok(result),
@@ -154,7 +154,7 @@ impl EngineHost {
 fn serve(mut jobs: mpsc::Receiver<Job>, limits: &EngineLimits, roots: &Arc<AutomationRoots>) {
     let mut session = Session::new();
     while let Some(job) = jobs.blocking_recv() {
-        // 待っている間に呼び出し元が諦めた要求は実行しない
+        // Don't run a request the caller gave up on while it was waiting
         let result = if job.token.is_cancelled() {
             Err(HostError::Cancelled)
         } else {
@@ -163,7 +163,7 @@ fn serve(mut jobs: mpsc::Receiver<Job>, limits: &EngineLimits, roots: &Arc<Autom
                     Work::Steps(steps) => run_steps(&mut session, steps, limits).map(Done::Steps),
                     Work::Tool { name, args } => {
                         let result = vectorcraft_mcp::call_tool(&mut GuardedBackend::new(&mut session, limits), name, args);
-                        // 中断されたツールは途中までしか動いていないので、結果ではなく中断として返す
+                        // A cancelled tool ran only part of the way, so report the cancellation rather than a result
                         if job.token.is_cancelled() {
                             Err(HostError::Cancelled)
                         } else {
@@ -190,8 +190,8 @@ fn run_steps(session: &mut Session, steps: &[Step], limits: &EngineLimits) -> Re
     Ok(results)
 }
 
-/// 許可リスト・引数・資源の上限を検査してから、コマンドを1つ実行する。エンジンへの
-/// コマンドはすべてここを通る。
+/// Checks the allowlist, the arguments and the resource limits, then runs one command. Every command
+/// for the engine goes through here.
 pub(crate) fn execute_checked(
     session: &mut Session,
     command: &str,
@@ -200,7 +200,7 @@ pub(crate) fn execute_checked(
     caller: Caller,
 ) -> Result<Value, HostError> {
     policy::check(command, params, caller).map_err(HostError::Rejected)?;
-    // エンジンは本番ビルドでは未知の引数を検査しないので、ここで検査する
+    // The engine doesn't check for unknown arguments in release builds, so check them here
     session.check_params(command, params).map_err(|e| HostError::Rejected(e.to_string()))?;
     let opens_document = matches!(command, "file.new" | "document.open");
     if opens_document && session.documents().len() >= limits.max_documents {
@@ -292,7 +292,7 @@ mod tests {
         token.cancel();
         let err = host.run(vec![Step::new("file.new", json!({}))], token).await.unwrap_err();
         assert!(matches!(err, HostError::Cancelled), "{err}");
-        // 何も作られていないので、図形は描けない
+        // Nothing was created, so no shape can be drawn
         let err = host
             .run(
                 vec![Step::new("shape.rectangle", json!({"x": 0, "y": 0, "width": 1, "height": 1}))],
@@ -379,7 +379,7 @@ mod tests {
             let r = tool(&host, name, args.clone()).await;
             assert!(text_of(&r).contains("not allowed"), "{name} {args}: {}", text_of(&r));
         }
-        // 画面の操作とファイルの読み書きの窓口は、ツールの名前を直接指定しても使えない
+        // The gateways for operating the UI and for reading and writing files can't be used even by naming the tool
         for (name, args) in [("select_tool", json!({"tool": "pen"})), ("open_file", json!({"path": "/etc/hosts"}))] {
             let r = tool(&host, name, args).await;
             assert!(r.is_error, "{name}: {}", text_of(&r));
@@ -402,8 +402,8 @@ mod tests {
 
     #[tokio::test]
     async fn japanese_weight_names_reach_the_svg() {
-        // vendor/vectorcraft-svg の修正: W0〜W9 のスタイル名が SVG の font-weight になる。
-        // SVG に書くのは指定したスタイル名から決まる値なので、フォントが入っていない環境でも同じ結果になる
+        // The vendor/vectorcraft-svg fix: W0–W9 style names become the SVG's font-weight.
+        // The SVG gets a value decided only by the given style name, so the result is the same where the fonts aren't installed
         let dir = tempfile::tempdir().unwrap();
         let host = host_with_document(&dir).await;
         let mut steps = Vec::new();

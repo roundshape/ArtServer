@@ -1,5 +1,5 @@
-//! ArtServer: VectorCraft のエンジンを MCP（Streamable HTTP）で操作できるようにする、
-//! GUI なしのベクターグラフィックスサーバー。構成は docs/design-policy.md 4章を参照。
+//! ArtServer: a headless vector graphics server that makes VectorCraft's engine operable over MCP
+//! (Streamable HTTP). See chapter 4 of docs/design-policy.md for the structure.
 
 pub mod auth;
 mod backend;
@@ -30,24 +30,24 @@ use crate::files::{Downloads, FileStore};
 use crate::session::Sessions;
 use crate::tools::ArtServer;
 
-/// 期限切れの作業セッションを探す間隔。
+/// How often to look for expired working sessions.
 const PURGE_INTERVAL: Duration = Duration::from_secs(60);
 
-/// 組み立て済みのサーバー。`router` を待ち受けに渡す。
+/// The assembled server. Pass `router` to the listener.
 pub struct App {
     pub router: Router,
     pub sessions: Arc<Sessions>,
-    /// 大きい書き出し結果の預かり場所（docs/design-policy.md 4.6節）
+    /// The file store for large exports (docs/design-policy.md section 4.6)
     pub files: Arc<FileStore>,
-    /// エンジンのファイルアクセスを閉じ込める空のディレクトリ。サーバーが動いている間は保持する。
+    /// The empty directory the engine's file access is confined to. Kept while the server runs.
     _sandbox: tempfile::TempDir,
 }
 
 impl App {
-    /// `config` からサーバーを組み立てる。`shutdown` が立つと MCP の処理を止める。
+    /// Assembles the server from `config`. When `shutdown` is set, MCP processing stops.
     pub fn build(config: &Config, shutdown: CancellationToken) -> std::io::Result<Self> {
         let limits = &config.limits;
-        // 読み取りは空のディレクトリの中だけ、書き込みは一切なし。MVP ではエンジンにファイルを触らせない
+        // Reads only inside the empty directory and no writes at all: in the MVP the engine touches no files
         let sandbox = tempfile::Builder::new().prefix("artserver-").tempdir()?;
         let roots = AutomationRoots::new(Some(sandbox.path()), None)
             .map_err(std::io::Error::other)?
@@ -93,7 +93,7 @@ impl App {
         let protected = Router::new()
             .nest_service("/mcp", mcp)
             .layer(middleware::from_fn_with_state(Auth::new(&config.token), auth::require_bearer));
-        // 書き出し結果は URL の ID が合鍵なので、トークンを求めない（docs/design-policy.md 4.6節）
+        // The ID in the URL is the key to an export, so no token is required (docs/design-policy.md section 4.6)
         let router = Router::new()
             .route("/healthz", get(|| async { Json(json!({"status": "ok"})) }))
             .route("/files/{id}", get(files::download))
@@ -108,15 +108,15 @@ impl App {
     }
 }
 
-/// プロセス全体の準備。エンジンの描画スレッド数を抑え、指定されたフォントのフォルダを加えて、
-/// フォントの走査を先に始める（フォルダは最初の走査より前に加える必要がある）。
+/// Process-wide preparation: limits the engine's rendering threads, adds the given font folders and starts
+/// scanning the fonts early (the folders must be added before the first scan).
 pub fn prepare_engine(config: &Config) {
     vectorcraft_render::set_default_threads(Some(config.limits.render_threads));
     vectorcraft_text::set_user_font_dirs(config.font_dirs.clone());
     vectorcraft_text::FontDb::global().scan_in_background();
 }
 
-/// `listener` で待ち受け、`signal` が完了するまでサーバーを動かす。
+/// Listens on `listener` and runs the server until `signal` completes.
 pub async fn serve(config: Config, listener: TcpListener, signal: impl Future<Output = ()> + Send + 'static) -> std::io::Result<()> {
     let shutdown = CancellationToken::new();
     let app = App::build(&config, shutdown.clone())?;
@@ -133,7 +133,7 @@ pub async fn serve(config: Config, listener: TcpListener, signal: impl Future<Ou
                     if purged > 0 {
                         tracing::info!(purged, "closed idle sessions");
                     }
-                    // 使われなくなった作業セッションの書き出し結果も、期限（既定 10 分）で消える
+                    // Exports of working sessions no longer in use also go when they expire (10 minutes by default)
                     let expired = files.purge_expired();
                     if expired > 0 {
                         tracing::info!(expired, "dropped expired exports");

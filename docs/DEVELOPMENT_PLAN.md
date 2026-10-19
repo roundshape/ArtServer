@@ -1,70 +1,70 @@
-# ArtServer 開発方針・Claude Code CLI 引き継ぎ書
+# ArtServer Development Plan and Claude Code CLI Handover Document
 
-- 作成日: 2026-10-17
-- プロジェクト名: **ArtServer**
-- 作業ディレクトリ（開発者のMac）: `~/MyTasks/RoundShape/ArtServer`
-- 実装言語: **Rust**
-- 公開予定: **GitHub / オープンソース（ArtServer自作部分はMITライセンス）**
-- 参照元: **VectorCraft** — https://github.com/storytold/vectorcraft.git
-- 本書の役割: Claude Code CLIが方針を理解し、調査・設計・実装・検証を進めるための引き継ぎ書
+- Created: 2026-10-17
+- Project name: **ArtServer**
+- Working directory (developer's Mac): `~/MyTasks/RoundShape/ArtServer`
+- Implementation language: **Rust**
+- Planned release: **GitHub / open source (ArtServer's own code under the MIT license)**
+- Reference project: **VectorCraft** — https://github.com/storytold/vectorcraft.git
+- Purpose of this document: a handover document so that Claude Code CLI understands the policy and carries out investigation, design, implementation and verification
 
-## 1. プロジェクトの目的
+## 1. Project goals
 
-**ArtServerは、AIエージェントや外部システムからネットワーク経由で操作できる、本格的なヘッドレス・ベクターグラフィックスサーバーを目指す。**
+**ArtServer aims to be a full-featured headless vector graphics server that AI agents and external systems can operate over the network.**
 
-単なるMCP接続プロキシを最終製品としない。VectorCraftの描画・ドキュメント機能を可能な限り再利用し、将来的にはIllustratorのサーバー版に相当する機能領域を目指す。ただし、Adobeのコード・商標・素材を流用するという意味ではない。
+The final product is not just an MCP connection proxy. It reuses VectorCraft's drawing and document features as much as possible, and in the future aims at a feature range equivalent to a server version of Illustrator. This does not mean reusing Adobe's code, trademarks or assets.
 
-基本原則:
-1. **既存資産を活かす**：ベクター描画エンジンを最初から作り直さない。
-2. **GUI不要**：サーバー上でヘッドレス動作させる。
-3. **AIネイティブ**：MCPを最優先。一般アプリ向けREST APIも後に提供。
-4. **高い機能性**：描画・編集・ファイル互換性を段階的に充実させる。
-5. **自立したプロジェクト**：VectorCraftとは別の製品名・GitHubリポジトリとする。
-6. **セキュリティ優先**：ネットワーク公開を想定し、ファイル操作とセッションを隔離する。
-7. **暫定コードの常態化を避ける**：最初に拡張可能な構造を検討し、場当たり的なラッパーを蓄積しない。
+Basic principles:
+1. **Build on existing assets**: do not rebuild the vector drawing engine from scratch.
+2. **No GUI needed**: run headless on a server.
+3. **AI-native**: MCP comes first. A REST API for general applications will also be provided later.
+4. **Rich functionality**: expand drawing, editing and file compatibility step by step.
+5. **Independent project**: use a product name and GitHub repository separate from VectorCraft.
+6. **Security first**: assume exposure on the network, and isolate file operations and sessions.
+7. **Avoid temporary code becoming permanent**: consider an extensible structure first, and do not pile up ad hoc wrappers.
 
-## 2. スコープ
+## 2. Scope
 
-### 最初の到達点（MVP）
+### First milestone (MVP)
 
-- macOSとLinuxで**GUIなし**に起動する単独のArtServer。
-- ネットワーク経由の **MCP（Streamable HTTPを第一候補）** でAIから操作可能。
-- 既存VectorCraft機能を通じて、ドキュメント作成・図形追加・変更・書き出しを実行。
-- SVG入出力、およびPDF出力を実際に検証（利用可能な機能・制限を明記）。
-- 認証とアクセス制限、作業ディレクトリ制限、エラー処理、テストを備える。
-- READMEの手順だけでローカル環境に再現できる。
+- A standalone ArtServer that starts on macOS and Linux **without a GUI**.
+- AI can operate it via **MCP over the network (Streamable HTTP as the first candidate)**.
+- Create documents, add and change shapes, and export through existing VectorCraft features.
+- Actually verify SVG input/output and PDF output (state the available features and limits clearly).
+- Include authentication and access restrictions, working directory restrictions, error handling and tests.
+- Can be reproduced in a local environment by following only the README steps.
 
-### 将来拡張
+### Future extensions
 
-- パス、塗り、線、グループ、レイヤー、アートボード、テキスト、画像、マスク、変形などの編集。
-- PDF / PDF互換AI / SVG等の互換性強化。**Adobeネイティブ`.ai`の完全互換は保証しない**。
-- REST APIとSDK、外部アプリ連携。
-- 複数ユーザー、ユーザー/セッションごとの文書分離、認証・認可。
-- ジョブキュー、非同期バッチ、大量レンダリング、監視、コンテナ配布。
-- データベースやCSVと連携する図版・印刷データ・自動組版への展開。
+- Editing of paths, fills, strokes, groups, layers, artboards, text, images, masks, transforms, and so on.
+- Stronger compatibility with PDF / PDF-compatible AI / SVG and others. **Full compatibility with Adobe native `.ai` is not guaranteed**.
+- REST API and SDK, integration with external applications.
+- Multiple users, document isolation per user/session, authentication and authorization.
+- Job queue, asynchronous batches, bulk rendering, monitoring, container distribution.
+- Expansion into figures, print data and automated typesetting linked to databases and CSV.
 
-## 3. 既存VectorCraftを先に調査する
+## 3. Investigate the existing VectorCraft first
 
-公式リポジトリ（2026-10-17時点のREADME）では、Rust Workspaceを採用し、おおむね以下の構成が説明されている。
+The official repository (README as of 2026-10-17) uses a Rust workspace and describes roughly the following structure.
 
-- `crates/`：`engine`, `render`, `doc`, `svg`, `pdf`, `mcp` など
-- `apps/vectorcraft-cli`：CLI、ヘッドレス処理、MCPの入口
-- 公式例：`cargo run --release -p vectorcraft-cli -- mcp` （**stdio MCP**）
-- 公式例：`cargo run --release -p vectorcraft-cli -- run --in examples/ribbons.vectorcraft --export out.pdf`
-- ライセンス：ルートに `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE` がある。
+- `crates/`: `engine`, `render`, `doc`, `svg`, `pdf`, `mcp`, etc.
+- `apps/vectorcraft-cli`: entry point for the CLI, headless processing and MCP
+- Official example: `cargo run --release -p vectorcraft-cli -- mcp` (**stdio MCP**)
+- Official example: `cargo run --release -p vectorcraft-cli -- run --in examples/ribbons.vectorcraft --export out.pdf`
+- License: `LICENSE-MIT`, `LICENSE-APACHE` and `NOTICE` are at the root.
 
-ただし、**この情報は調査の出発点に過ぎない。** 実装開始時点のソースコード・README・`docs/mcp.md`・`docs/control-protocol.md`・`AGENTS.md`・`Cargo.toml`を実際に確認し、現状を優先する。
+However, **this information is only a starting point for the investigation.** Actually check the source code, README, `docs/mcp.md`, `docs/control-protocol.md`, `AGENTS.md` and `Cargo.toml` as of the start of implementation, and give priority to the current state.
 
-調査項目:
-1. コア描画・ドキュメント・ファイルI/Oを**UI非依存のRust crate**として利用できるか。
-2. 既存MCPはstdioのみか、HTTPトランスポートがすでに実装されていないか。
-3. MCPツールの一覧・ドキュメント状態管理・エクスポート機能・ファイルアクセス制御。
-4. `--automation-read-root` / `--automation-write-root` 等の境界設定の実装と有効性。
-5. ライセンス・素材・フォント・PDFバックエンド等の第三者依存関係。
-6. macOS Apple SiliconとLinux上でのビルド・テスト・ヘッドレス稼働条件。
-7. upstreamの更新を今後取り込むための適切な依存関係管理方法。
+Items to investigate:
+1. Whether core drawing, documents and file I/O can be used as **UI-independent Rust crates**.
+2. Whether the existing MCP is stdio only, or whether an HTTP transport is already implemented.
+3. The list of MCP tools, document state management, export features, file access control.
+4. The implementation and effectiveness of boundary settings such as `--automation-read-root` / `--automation-write-root`.
+5. Third-party dependencies such as licenses, assets, fonts and the PDF backend.
+6. Conditions for building, testing and running headless on macOS Apple Silicon and Linux.
+7. A suitable way to manage dependencies so that upstream updates can be taken in later.
 
-参考:
+References:
 - https://github.com/storytold/vectorcraft
 - https://github.com/storytold/vectorcraft/blob/main/docs/mcp.md
 - https://github.com/storytold/vectorcraft/blob/main/docs/control-protocol.md
@@ -72,116 +72,116 @@
 - https://github.com/storytold/vectorcraft/blob/main/LICENSE-MIT
 - https://github.com/storytold/vectorcraft/blob/main/NOTICE
 
-## 4. 技術方針（調査後に確定）
+## 4. Technical policy (finalized after the investigation)
 
-理想的な構成:
+Ideal structure:
 
 ```text
-Claude Code / Codex / その他MCPクライアント
+Claude Code / Codex / other MCP clients
                  │
         HTTPS + MCP (Streamable HTTP)
                  ▼
          ArtServer (Rust)
-         ├─ 認証・認可
-         ├─ MCPトランスポート / API
-         ├─ セッション・ドキュメント管理
-         ├─ ファイルアクセス制御
-         └─ VectorCraft由来のエンジン
-                    ├─ ドキュメント / コマンド
-                    ├─ 描画 / パス処理
-                    └─ SVG / PDF / AI互換
+         ├─ Authentication / authorization
+         ├─ MCP transport / API
+         ├─ Session / document management
+         ├─ File access control
+         └─ Engine derived from VectorCraft
+                    ├─ Documents / commands
+                    ├─ Drawing / path processing
+                    └─ SVG / PDF / AI compatibility
 ```
 
-実装案を比較し、理由を記録する。
+Compare the implementation options and record the reasons.
 
-- **案A：必要なVectorCraft crateをRustライブラリとして参照**。原則こちらを優先的に検討。エンジンとネットワーク層を分離しやすい。
-- **案B：既存CLIのstdio MCPを安全なHTTPゲートウェイで公開**。早期MVPに向く可能性。ただしプロセス・セッション・エラー・性能の管理が課題。
-- **案C：必要なソースのみArtServer側へコピー・適合**。独立性は高い一方、upstream追従・重複保守の負担が増える。必要性が示された場合だけ選択。
+- **Option A: Reference the needed VectorCraft crates as Rust libraries**. As a rule, consider this one first. It makes it easy to separate the engine and the network layer.
+- **Option B: Expose the existing CLI's stdio MCP through a secure HTTP gateway**. May suit an early MVP. However, managing processes, sessions, errors and performance is a challenge.
+- **Option C: Copy only the needed sources into ArtServer and adapt them**. High independence, but the burden of following upstream and maintaining duplicates grows. Choose only if the need is shown.
 
-**アーキテクチャの決定前に大規模な移植を始めないこと。** HTTP接続できることだけを優先して危険な遠隔コマンド実行サーバーにしないこと。
+**Do not start a large-scale port before the architecture is decided.** Do not prioritize HTTP connectivity alone and end up with a dangerous remote command execution server.
 
-## 5. 段階的な開発計画
+## 5. Phased development plan
 
-### Phase 0 — ソース調査・方式決定
+### Phase 0 — Source investigation and approach decision
 
-- 参照元の現行ソースと既存CLIを調べ、MCPコマンド・ライセンスを検証。
-- 可能ならコマンド実行、SVG/PDF出力、テストを再現。
-- 案A/B/Cの比較表と採用案、根拠、未解決点を `docs/architecture.md` に記録。
-- 実装開始時に使用したVectorCraftの**commit SHA**を記録。
-- 既存のユーザー作業ディレクトリを勝手に移動・削除・上書きしない。
+- Examine the reference project's current source and existing CLI, and verify the MCP commands and licenses.
+- If possible, reproduce command execution, SVG/PDF output and tests.
+- Record a comparison table of Options A/B/C, the chosen option, the rationale and open issues in `docs/architecture.md`.
+- Record the VectorCraft **commit SHA** used at the start of implementation.
+- Do not move, delete or overwrite the user's existing working directories without permission.
 
-### Phase 1 — 最小ArtServer（初回実装）
+### Phase 1 — Minimal ArtServer (first implementation)
 
-- 独立したRustサーバーバイナリ `artserver` を作成。
-- `/mcp` 等のエンドポイントで、標準仕様に沿ったMCP接続を実現。
-- 最小限のドキュメント作成・図形操作・SVG/PDF出力をエンドツーエンド検証。
-- 初期バインド先は **127.0.0.1**。パブリックな待受は既定で無効。
-- アクセストークン等の認証を設計・実装。通信時のTLSは信頼できるリバースプロキシ方式等を検討。
-- パス制限・セッション分離・入力サイズ制限・タイムアウト・エラー応答を実装。
-- 起動方法、Claude Code等からの接続方法、curl等によるヘルスチェック、実例をREADME化。
+- Create a standalone Rust server binary `artserver`.
+- Provide MCP connections that follow the standard specification at an endpoint such as `/mcp`.
+- Verify minimal document creation, shape operations and SVG/PDF output end to end.
+- The initial bind address is **127.0.0.1**. Public listening is disabled by default.
+- Design and implement authentication such as access tokens. For TLS in transit, consider approaches such as a trusted reverse proxy.
+- Implement path restrictions, session isolation, input size limits, timeouts and error responses.
+- Document in the README how to start it, how to connect from Claude Code and others, health checks with curl and similar tools, and working examples.
 
-### Phase 2 — ドキュメント機能・互換性
+### Phase 2 — Document features and compatibility
 
-- 既存エンジン機能を順にArtServerから使えるようにする。
-- ドキュメント状態・保存形式・ファイル互換性を実ファイルで検証。
-- Unicode・日本語フォント、画像・レイヤー・透明・パス処理等の検証。
-- 自動テストと性能測定を継続。
+- Make existing engine features usable from ArtServer one by one.
+- Verify document state, save formats and file compatibility with real files.
+- Verify Unicode and CJK fonts (such as Japanese), images, layers, transparency, path processing, etc.
+- Continue automated tests and performance measurement.
 
-### Phase 3 — サーバー製品化
+### Phase 3 — Turning the server into a product
 
-- REST API、複数ユーザー、認可、セッションとジョブの永続化。
-- 非同期バッチ処理、監視、ログ、Docker、Linux本番配備。
-- 外部公開前の脅威分析・負荷試験・ライセンス/商標確認。
+- REST API, multiple users, authorization, persistence of sessions and jobs.
+- Asynchronous batch processing, monitoring, logging, Docker, production deployment on Linux.
+- Threat analysis, load testing and license/trademark checks before external release.
 
-## 6. セキュリティ上の必須事項
+## 6. Security requirements
 
-- MCPツールから**任意のシェルコマンドを実行できる設計にしない**。
-- サーバー実行ユーザーは最小権限。入力ファイルは信用しない。
-- 読み書き可能なルートを制限し、`..`、シンボリックリンク、絶対パス等による逸脱を検査。
-- 文書・一時ファイル・プロセスのセッション間分離。ユーザー間のデータ混在を防ぐ。
-- リクエスト容量、メモリ、CPU時間、ページ/オブジェクト数等に制限を設ける。
-- ログに秘密情報、アクセストークン、ユーザー文書の中身を無条件に出さない。
-- リモート公開時はTLS、認証・認可、Origin/Host対策、レート制限を検討し、無認証の全世界公開を禁止。
-- 本体・依存ライブラリに既知の脆弱性がないか検査する。
+- **Do not design it so that arbitrary shell commands can be run** from MCP tools.
+- The user running the server has least privilege. Do not trust input files.
+- Restrict the readable and writable roots, and check for escapes through `..`, symbolic links, absolute paths, etc.
+- Isolate documents, temporary files and processes between sessions. Prevent data from mixing between users.
+- Set limits on request size, memory, CPU time, page/object counts, etc.
+- Do not unconditionally write secrets, access tokens or the contents of user documents to logs.
+- For remote exposure, consider TLS, authentication/authorization, Origin/Host protections and rate limiting, and forbid exposing it to the whole world without authentication.
+- Check the main code and dependency libraries for known vulnerabilities.
 
-## 7. ライセンス・ブランドの扱い
+## 7. Handling licenses and brands
 
-- VectorCraftのルートは**MIT OR Apache-2.0**。流用する対象コードと依存物について、適用条件をファイル単位で確認する。
-- MITを選ぶ場合、元の著作権表示とMITライセンス文を必要な配布物に残す。Apache-2.0を選択する部分や第三者コンポーネントの条件も守る。
-- ArtServerの独自コードはMITで公開する方針。ただし**混在するコンポーネントのライセンスまで一律MITに書き換えない**。
-- `NOTICE`、ライセンス情報、素材・フォント・PDFバックエンドの条件を確認して取り込む。
-- VectorCraft/ArtCraftの名称・ロゴ・画像等は、コードライセンスで利用権が保証されるものではない。**ArtServerは独自名称・独自ロゴ**で公開。
-- 「ArtServer」の既存製品名・商標の衝突は公開前に確認。
-- 元プロジェクトの名称・帰属についてREADMEで適切に謝辞を示す。公式派生版と誤認させない。
+- VectorCraft's root is **MIT OR Apache-2.0**. For the code and dependencies being reused, check the applicable terms file by file.
+- If MIT is chosen, keep the original copyright notice and MIT license text in the required distributions. Also follow the terms for parts where Apache-2.0 is chosen and for third-party components.
+- The policy is to release ArtServer's own code under MIT. However, **do not uniformly rewrite the licenses of mixed-in components to MIT**.
+- Check and include `NOTICE`, license information, and the terms for assets, fonts and the PDF backend.
+- The code license does not grant the right to use the VectorCraft/ArtCraft names, logos, images, etc. **ArtServer is released under its own name and its own logo**.
+- Check for conflicts of "ArtServer" with existing product names and trademarks before release.
+- Give proper credit for the original project's name and attribution in the README. Do not let it be mistaken for an official derivative.
 
-## 8. Claude Code CLIに任せる具体的な初回タスク
+## 8. Concrete first tasks for Claude Code CLI
 
-**以下を最初の作業指示とする。**
+**The following are the first work instructions.**
 
-1. `~/MyTasks/RoundShape/ArtServer` の状態を調べ、既存ファイルを保護する。
-2. 本書を読み、目標・制約を把握する。
-3. VectorCraftの現行ソースの存在場所を探す。既にcloneされていればそれを参照。存在しない場合は、混同しないよう `upstream/` 等の下にcloneする案を検討する（むやみに二重cloneしない）。
-4. 公式`README.md`、`AGENTS.md`、`docs/mcp.md`、`Cargo.toml`、コアcrate、ライセンスを調査する。
-5. 実際のMCP/CLI起動方法と、既存HTTP対応の有無を検証する。
-6. ビルド・テストが可能なら実行し、環境・コマンド・結果を記録する。
-7. **採用するアーキテクチャと最小実装範囲を決定**し `docs/architecture.md` に記載する。
-8. 最小MVPを実装し、可能なら「AIから矩形を作成 → SVG出力」の実行確認まで行う。
-9. `README.md`、`LICENSE`、`THIRD_PARTY_NOTICES.md`（必要に応じて）、テスト、`docs/progress.md` を整備する。
-10. 実装済み・未実装・既知の制限・確認方法・次の作業を最後に報告する。
+1. Check the state of `~/MyTasks/RoundShape/ArtServer` and protect existing files.
+2. Read this document and understand the goals and constraints.
+3. Find where the current VectorCraft source is. If it is already cloned, use that. If not, consider cloning it under `upstream/` or similar so it is not confused with other code (do not clone it twice needlessly).
+4. Investigate the official `README.md`, `AGENTS.md`, `docs/mcp.md`, `Cargo.toml`, the core crates and the licenses.
+5. Verify how MCP/CLI are actually started and whether HTTP is already supported.
+6. If building and testing are possible, run them and record the environment, commands and results.
+7. **Decide the architecture to adopt and the minimal implementation scope**, and write them in `docs/architecture.md`.
+8. Implement a minimal MVP and, if possible, go as far as confirming that "create a rectangle from AI → SVG output" runs.
+9. Prepare `README.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md` (as needed), tests and `docs/progress.md`.
+10. At the end, report what is implemented, what is not implemented, known limitations, how to verify, and next tasks.
 
-**途中の判断基準:** 既存エンジン再利用の妥当性やライセンスに重大な不明点が残る場合は、推測でコード流用・公開まで進めず、調査結果と選択肢を報告する。
+**Decision rule along the way:** If serious unknowns remain about whether reusing the existing engine is sound, or about licenses, do not go ahead with reusing code or releasing based on guesses; report the findings and the options.
 
-## 9. MVPの完了条件
+## 9. MVP completion criteria
 
-- ArtServerがGUIなしで起動し、ローカルHTTPでMCP接続できる。
-- 対応するMCPクライアントから実際に図形生成とSVG書き出しが成功する。
-- 既存VectorCraftとの差分・ライセンス情報・採用依存関係が文書化される。
-- 基本的な異常系（不正入力、認証失敗、許可外パス、タイムアウト）がテストされる。
-- 再現可能なビルド・実行手順がある。
-- 本番向けに未実装の安全対策があれば、明確に未実装と表示する。
+- ArtServer starts without a GUI and accepts MCP connections over local HTTP.
+- Shape creation and SVG export actually succeed from a supported MCP client.
+- Differences from the existing VectorCraft, license information and adopted dependencies are documented.
+- Basic error cases (invalid input, authentication failure, disallowed paths, timeouts) are tested.
+- There are reproducible build and run steps.
+- If any safety measures for production are not implemented, clearly mark them as not implemented.
 
 ---
 
-**Claude Code CLIへの開始指示例**
+**Example start instruction for Claude Code CLI**
 
-> このディレクトリの `DEVELOPMENT_PLAN.md` を読み、ArtServerの開発を始めてください。まずPhase 0の調査を実施し、その結果に基づいて採用アーキテクチャを決定してください。その後、Phase 1のMVPに着手してください。既存ファイルを破壊せず、流用ライセンスとMCP接続時の安全性を重視し、作業内容とテスト結果を記録してください。
+> Read `DEVELOPMENT_PLAN.md` in this directory and start developing ArtServer. First carry out the Phase 0 investigation, and decide the architecture to adopt based on its results. Then start on the Phase 1 MVP. Do not destroy existing files, pay close attention to the licenses of reused code and to safety in MCP connections, and record your work and test results.

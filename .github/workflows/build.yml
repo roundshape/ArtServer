@@ -1,4 +1,4 @@
-# Linux でビルドが通ることを確かめる。テストは実行しない（docs/progress.md 2026-10-18）
+# Checks that ArtServer builds on Linux. Tests are not run (docs/progress.md 2026-10-18)
 name: build
 
 on:
@@ -10,7 +10,7 @@ on:
 permissions:
   contents: read
 
-# 同じブランチで新しい push があったら、古い実行は止める
+# A new push to the same branch cancels the older run
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Rust を用意する
+      - name: Set up Rust
         run: rustup toolchain install stable --profile minimal && rustup default stable
-      # 依存のビルド結果を次回に持ち越して、実行時間を短くする
+      # Carry the dependencies' build results over to the next run, to make it shorter
       - uses: Swatinem/rust-cache@v2
-      - name: ビルド
+      - name: Build
         run: cargo build --locked

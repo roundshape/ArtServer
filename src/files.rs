@@ -1,9 +1,9 @@
-//! 大きい書き出し結果の一時的な預かり場所と、それを取りに来る `GET /files/{id}` の窓口
-//! （docs/design-policy.md 4.6節）。
+//! A temporary store for large exports, and the `GET /files/{id}` endpoint that serves them
+//! (docs/design-policy.md section 4.6).
 //!
-//! 中身はメモリにだけ持ち、ディスクには書かない。URL の ID（256ビットの乱数）を合鍵にして、
-//! トークンなしで取れる（ブラウザや、curl を使えないクライアントでもリンクから取れるように）。
-//! 期限が過ぎたものと、閉じた作業セッションのものは捨てる。
+//! The contents are kept only in memory, never on disk. The ID in the URL (256 random bits) is the key, so a
+//! file can be fetched without a token (so that browsers and clients that can't run curl can fetch it from the
+//! link). Expired files and those of closed working sessions are dropped.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -15,19 +15,19 @@ use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
-/// 1つの作業セッションが同時に預けられるファイルの数。超えたら古いものから捨てる。
+/// Files one working session may keep at once. Past that, the oldest go first.
 const MAX_FILES_PER_SESSION: usize = 8;
 
-/// ID の乱数のバイト数。URL がそのまま合鍵になるので、推測できない長さにする。
+/// Number of random bytes in an ID. The URL itself is the key, so it must be too long to guess.
 const ID_BYTES: usize = 32;
 
-/// ファイル名の文字数の上限（拡張子を除く）。
+/// Maximum number of characters in a file name (without the extension).
 const MAX_NAME_CHARS: usize = 100;
 
-/// 預けられなかった理由。
+/// Why a file couldn't be stored.
 #[derive(Debug)]
 pub enum FileError {
-    /// 全体の合計の上限を超える
+    /// It would go over the total limit
     Full {
         limit_bytes: usize,
     },
@@ -47,14 +47,14 @@ impl fmt::Display for FileError {
     }
 }
 
-/// 預けた結果。
+/// The result of storing a file.
 #[derive(Debug)]
 pub struct Deposit {
     pub id: String,
     pub expires_in: Duration,
 }
 
-/// 預かっているファイル。
+/// A stored file.
 #[derive(Debug, Clone)]
 pub struct StoredFile {
     pub name: String,
@@ -68,7 +68,7 @@ struct Entry {
     expires: Instant,
 }
 
-/// 預かり場所。
+/// The file store.
 pub struct FileStore {
     entries: Mutex<HashMap<String, Entry>>,
     ttl: Duration,
@@ -88,7 +88,7 @@ impl FileStore {
         self.entries.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// 作業セッション `session` の書き出し結果を預かり、取りに来るための ID を返す。
+    /// Stores an export of working session `session` and returns the ID to fetch it with.
     pub fn put(&self, session: &str, file: StoredFile) -> Result<Deposit, FileError> {
         let mut entries = self.entries();
         let now = Instant::now();
@@ -118,13 +118,14 @@ impl FileStore {
         Ok(Deposit { id, expires_in: self.ttl })
     }
 
-    /// 期限内のファイル。期限までは何度でも取れる（表示したリンクを先読みするクライアントでも消えないように）。
+    /// A file that hasn't expired. It can be fetched any number of times until then (so that clients that
+    /// prefetch the links they show don't make it disappear).
     pub fn get(&self, id: &str) -> Option<StoredFile> {
         let entries = self.entries();
         entries.get(id).filter(|e| e.expires > Instant::now()).map(|e| e.file.clone())
     }
 
-    /// 閉じた作業セッションのファイルを捨て、その数を返す。
+    /// Drops the files of a closed working session and returns how many.
     pub fn remove_session(&self, session: &str) -> usize {
         let mut entries = self.entries();
         let before = entries.len();
@@ -132,7 +133,7 @@ impl FileStore {
         before - entries.len()
     }
 
-    /// 期限の過ぎたファイルを捨て、その数を返す。
+    /// Drops the expired files and returns how many.
     pub fn purge_expired(&self) -> usize {
         let mut entries = self.entries();
         let before = entries.len();
@@ -148,7 +149,7 @@ fn new_id() -> Result<String, FileError> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// 文書の名前からファイル名を作る。パスの区切りや制御文字は使わない。
+/// Makes a file name from the document's name, without path separators or control characters.
 pub fn file_name(title: Option<&str>, extension: &str) -> String {
     let stem: String = title
         .unwrap_or_default()
@@ -161,7 +162,7 @@ pub fn file_name(title: Option<&str>, extension: &str) -> String {
     format!("{stem}.{extension}")
 }
 
-/// `GET /files/{id}` の窓口が使うもの。
+/// What the `GET /files/{id}` endpoint uses.
 #[derive(Clone)]
 pub struct Downloads {
     pub store: Arc<FileStore>,
@@ -169,9 +170,10 @@ pub struct Downloads {
     pub allowed_origins: Arc<[String]>,
 }
 
-/// 預かったファイルを返す。トークンは求めず、URL の ID だけで取れる。Host と Origin は `/mcp` と
-/// 同じ許可リストで検査する（rmcp の検査は `/mcp` にしか掛からないため）。中身はブラウザの中で
-/// 開かず、必ずダウンロードさせる（SVG のスクリプトなどを、この窓口のオリジンで動かさないため）。
+/// Returns a stored file. No token is required; the ID in the URL is enough. Host and Origin are checked
+/// against the same allowlists as `/mcp` (rmcp's checks apply only to `/mcp`). The contents are never opened
+/// inside the browser but always downloaded (so that scripts in an SVG, for example, never run on this
+/// endpoint's origin).
 pub async fn download(State(d): State<Downloads>, Path(id): Path<String>, headers: HeaderMap) -> Response {
     if !host_allowed(&headers, &d.allowed_hosts) {
         return (StatusCode::FORBIDDEN, "forbidden: Host header is not allowed").into_response();
@@ -197,7 +199,7 @@ pub async fn download(State(d): State<Downloads>, Path(id): Path<String>, header
         .into_response()
 }
 
-/// ASCII の代わりの名前と、UTF-8 の名前（RFC 6266 / RFC 8187）の両方を書く。
+/// Writes both an ASCII fallback name and the UTF-8 name (RFC 6266 / RFC 8187).
 fn content_disposition(name: &str) -> String {
     let ascii: String = name.chars().map(|c| if c.is_ascii_graphic() || c == ' ' { c } else { '_' }).collect();
     let encoded: String = name
@@ -210,7 +212,7 @@ fn content_disposition(name: &str) -> String {
     format!("attachment; filename=\"{ascii}\"; filename*=UTF-8''{encoded}")
 }
 
-/// Host が許可リストにあるか。リストの項目にポートがあればポートも見る（rmcp と同じ考え方）。
+/// Is the Host on the allowlist? When an allowlist entry has a port, the port is compared too (as rmcp does).
 fn host_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
     let Some(host) = headers
         .get(header::HOST)
@@ -230,7 +232,7 @@ fn host_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
     })
 }
 
-/// Origin が付いていなければ通す。付いていれば、許可リストにあるものだけを通す。
+/// Passes a request without an Origin. One with an Origin passes only when it is on the allowlist.
 fn origin_allowed(headers: &HeaderMap, allowed: &[String]) -> bool {
     let Some(origin) = headers.get(header::ORIGIN) else {
         return true;
@@ -263,7 +265,7 @@ mod tests {
         let store = FileStore::new(Duration::from_secs(60), 1 << 20);
         let deposit = store.put("s1", file(10)).unwrap();
         assert_eq!(deposit.id.len(), ID_BYTES * 2);
-        // 期限までは何度でも取れる
+        // Can be fetched any number of times until it expires
         assert_eq!(store.get(&deposit.id).unwrap().data.len(), 10);
         assert!(store.get(&deposit.id).is_some());
         assert!(store.get("unknown").is_none());
@@ -284,7 +286,7 @@ mod tests {
         assert!(store.get(&ids[0]).is_none(), "the oldest is dropped");
         assert!(store.get(&ids[1]).is_none());
         assert!(ids[2..].iter().all(|id| store.get(id).is_some()));
-        // ほかの作業セッションの分は数えない
+        // Files of other working sessions don't count
         assert!(store.put("s2", file(1)).is_ok());
     }
 

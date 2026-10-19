@@ -1,400 +1,400 @@
-# ArtServer 進捗記録
+# ArtServer Progress Log
 
-## 2026-10-17 Phase 0（調査・方式決定）
+## 2026-10-17 Phase 0 (investigation and choice of approach)
 
-- VectorCraft（`~/MyTasks/RoundShape/vectorcraft`、commit `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c`）をソースの静的読解で調査した。結果は `docs/architecture.md`。
-- 案A-2（`vectorcraft-engine` をライブラリとして組み込み、MCP層は ArtServer で作る）の採用をユーザーが承認した。方針は `docs/design-policy.md`。
-- 外部レビュー（`docs/ARTSERVER_PROCESS_ISOLATION_REVIEW.md`）を受けて、将来のプロセス分離の方針を設計書の12章に追加した。
-- MCP の最新仕様（2026-07-28 版）でプロトコル上のセッションが廃止されたことを確認し、作業セッションをハンドルで受け渡す設計に改めた（設計書 4.4、4.5節）。
+- Investigated VectorCraft (`~/MyTasks/RoundShape/vectorcraft`, commit `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c`) by static reading of the source. The results are in `docs/architecture.md`.
+- The project owner approved adopting Option A-2 (embed `vectorcraft-engine` as a library and build the MCP layer in ArtServer). The policy is in `docs/design-policy.md`.
+- Following an external review (`docs/ARTSERVER_PROCESS_ISOLATION_REVIEW.md`), added the policy for future process isolation as chapter 12 of the design document.
+- Confirmed that the latest MCP specification (2026-07-28 version) removed protocol-level sessions, and changed the design to pass working sessions around as handles (design document sections 4.4 and 4.5).
 
-## 2026-10-17 Phase 1（MVP）の最初の実装
+## 2026-10-17 First implementation of Phase 1 (MVP)
 
-### 環境
+### Environment
 
-| 項目 | 内容 |
+| Item | Details |
 |---|---|
-| OS | macOS（Darwin 27.0.0、Apple Silicon） |
-| Rust | 1.99.1（Homebrew の `rust` で導入） |
-| 主な依存 | vectorcraft-engine（git、commit 固定）、rmcp 3.5.1、axum 0.8.9、tokio 1.53.1 |
-| PDF バックエンド | VectorCraft と同じ `[patch.crates-io]` を写し、krilla と hayro-* が craft-libs 版になっていることを `Cargo.lock` で確認 |
+| OS | macOS (Darwin 27.0.0, Apple Silicon) |
+| Rust | 1.99.1 (installed with Homebrew's `rust`) |
+| Main dependencies | vectorcraft-engine (git, pinned commit), rmcp 3.5.1, axum 0.8.9, tokio 1.53.1 |
+| PDF backend | Copied the same `[patch.crates-io]` as VectorCraft, and confirmed in `Cargo.lock` that krilla and hayro-* are the craft-libs versions |
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo fetch` | 成功。`Cargo.lock` は VectorCraft のものを起点にした |
-| `cargo build --all-targets` | 成功（初回 約2分） |
-| `cargo test` | 27件すべて成功（単体17件、E2E 10件） |
-| `cargo clippy --all-targets` | 警告なし |
-| `cargo fmt --check` | 差分なし |
-| バイナリを起動して curl で確認 | `/healthz` 応答、トークンなしは 401、`tools/list` で15ツール、セッション作成 → 文書作成 → 矩形 → SVG 書き出しまで成功 |
+| `cargo fetch` | Succeeded. `Cargo.lock` was started from VectorCraft's |
+| `cargo build --all-targets` | Succeeded (about 2 minutes the first time) |
+| `cargo test` | All 27 passed (17 unit, 10 E2E) |
+| `cargo clippy --all-targets` | No warnings |
+| `cargo fmt --check` | No changes |
+| Started the binary and checked with curl | `/healthz` responded, 401 without a token, 15 tools in `tools/list`, session creation → document creation → rectangle → SVG export all succeeded |
 
-### 実装したもの
+### What was implemented
 
-- `artserver` バイナリ（127.0.0.1 で待ち受け。ループバック以外は `--allow-public-bind` が必要）
-- MCP Streamable HTTP（`POST /mcp`）。rmcp を使い、2026-07-28 版とそれ以前の版の両方に対応。セッションIDは発行しない
+- `artserver` binary (listens on 127.0.0.1. Anything other than loopback needs `--allow-public-bind`)
+- MCP Streamable HTTP (`POST /mcp`). Uses rmcp and supports both the 2026-07-28 version and earlier versions. Does not issue session IDs
 - `GET /healthz`
-- Bearer トークン認証（定数時間比較、32文字以上を要求）
-- Host / Origin 検査、本文サイズ上限（rmcp の設定で有効化）
-- 作業セッション（ハンドルを主体に結びつけて発行、上限数、アイドル破棄）
-- セッションごとのエンジン実行スレッド（届いた順に実行、待ち行列が溢れたら混雑エラー、制限時間を超えたらキャンセル、クライアントの切断でキャンセル）
-- コマンドの許可リスト、ファイルパス引数の拒否、引数の未知キー検査、文書数と Undo 履歴の上限
-- エンジンのファイルアクセスを空の一時ディレクトリの中に閉じ込める（読み取りはその中だけ、書き込みは一切不可）
-- ツール15個（セッション、文書作成、SVG 読み込み、図形5種、塗り、移動、文書の状態、書き出し、Undo/Redo）
+- Bearer token authentication (constant-time comparison, requires 32 characters or more)
+- Host / Origin checks, body size limit (enabled through rmcp's settings)
+- Working sessions (handles are issued bound to a principal, maximum count, disposal when idle)
+- An engine execution thread per session (runs in order of arrival, busy error when the queue overflows, cancels when the time limit is exceeded, cancels when the client disconnects)
+- Command allowlist, refusal of file path arguments, check for unknown argument keys, limits on the number of documents and on Undo history
+- Confines the engine's file access to an empty temporary directory (reads only inside it, no writes at all)
+- 15 tools (session, document creation, SVG import, 5 kinds of shapes, fill, move, document state, export, Undo/Redo)
 
-### テストで確かめている異常系
+### Failure cases covered by tests
 
-| 異常系 | テスト |
+| Failure case | Test |
 |---|---|
-| 認証失敗（トークンなし・誤り） | `requests_without_the_right_token_get_401` |
-| 不正な Origin / Host | `foreign_origins_and_hosts_are_refused` |
-| 本文サイズ超過 | `oversized_bodies_are_refused` |
-| タイムアウト | `a_call_over_the_time_limit_is_cancelled` |
-| 不正な入力（未知のセッション、未知の引数 `path`） | `unknown_sessions_and_unknown_arguments_are_refused` |
-| 文書がない状態での描画 | `drawing_without_a_document_reports_a_tool_error` |
-| セッション数の上限 | `sessions_are_capped`、`session::tests` |
-| 許可外のコマンド・パス引数 | `policy::tests`、`engine_host::tests::refused_commands_never_reach_the_engine` |
-| 許可外のパス（SVG にリンクされたファイル） | `engine_host::tests::linked_files_outside_the_roots_are_not_read` |
-| 他の主体のハンドル | `session::tests::handles_are_bound_to_their_owner` |
+| Authentication failure (no token, wrong token) | `requests_without_the_right_token_get_401` |
+| Invalid Origin / Host | `foreign_origins_and_hosts_are_refused` |
+| Body size exceeded | `oversized_bodies_are_refused` |
+| Timeout | `a_call_over_the_time_limit_is_cancelled` |
+| Invalid input (unknown session, unknown argument `path`) | `unknown_sessions_and_unknown_arguments_are_refused` |
+| Drawing with no document | `drawing_without_a_document_reports_a_tool_error` |
+| Limit on the number of sessions | `sessions_are_capped`, `session::tests` |
+| Commands and path arguments that are not allowed | `policy::tests`, `engine_host::tests::refused_commands_never_reach_the_engine` |
+| Paths that are not allowed (files linked from an SVG) | `engine_host::tests::linked_files_outside_the_roots_are_not_read` |
+| Another principal's handle | `session::tests::handles_are_bound_to_their_owner` |
 
-### 未実装・既知の制限
+### Not implemented / known limitations
 
-- TLS（リバースプロキシで終端する前提）、複数ユーザーと権限管理、レート制限、プロセス分離
-- ファイルパス指定での入出力、日本語フォントの同梱
-- 制限時間を超えた処理はキャンセルを求めるが、エンジンが止まるまでそのセッションは混雑中になる
-- `THIRD_PARTY_NOTICES.md` は Phase 0 の監査をもとにした要約。バイナリ配布の前に `cargo about` などで全文を生成する必要がある
-- `cargo deny` によるライセンス・脆弱性の検査は未実施
+- TLS (assumed to be terminated at a reverse proxy), multiple users and permission management, rate limiting, process isolation
+- Input and output by file path, bundling CJK fonts such as Japanese
+- Work that goes over the time limit is asked to cancel, but the session stays busy until the engine stops
+- `THIRD_PARTY_NOTICES.md` is a summary based on the Phase 0 audit. Before distributing binaries, the full text needs to be generated with `cargo about` or similar
+- License and vulnerability checks with `cargo deny` have not been done yet
 
-### 未確認
+### Not yet verified
 
-- Claude Code から実際に接続しての動作確認（README に手順を記載済み。ユーザーの Claude Code の設定に追加する必要があるため未実施）
-- Linux でのビルドと動作
-- 古いクライアント（`initialize` と `Mcp-Session-Id` を使うもの）での動作。E2E テストは rmcp 3.5.1 のクライアントで行っている
+- Checking operation by actually connecting from Claude Code (the steps are already in the README. Not done because it needs to be added to the project owner's Claude Code settings)
+- Building and running on Linux
+- Operation with older clients (those that use `initialize` and `Mcp-Session-Id`). The E2E tests use the rmcp 3.5.1 client
 
-### 次の作業
+### Next steps
 
-1. Claude Code からの接続確認
-2. `LICENSE`（MIT）の追加（著作権者の表記を決める必要がある）
-3. `cargo deny` / `cargo about` の導入とライセンス表示の生成
-4. Linux でのビルド・テスト
-5. Phase 2: 日本語フォントの方針決定、ツールの拡充（テキスト、レイヤー、グループ、画像など）
+1. Check the connection from Claude Code
+2. Add `LICENSE` (MIT) (the copyright holder notation needs to be decided)
+3. Introduce `cargo deny` / `cargo about` and generate the license notices
+4. Build and test on Linux
+5. Phase 2: decide the policy for CJK fonts such as Japanese, expand the tools (text, layers, groups, images, etc.)
 
-## 2026-10-18 Claude Code からの接続確認と修正
+## 2026-10-18 Connection check from Claude Code and fixes
 
-### やったこと
+### What was done
 
-- `LICENSE`（MIT）を追加した。著作権者の表記は `Copyright (c) 2026 RoundShape`（ユーザーが決定）。
-- Claude Code から接続して動作を確かめた。
-  - トークンは `~/.config/artserver/token` に置き、`./target/debug/artserver --token-file ~/.config/artserver/token` で起動した
-  - 登録は `claude mcp add --transport http artserver ...`。既定の local スコープなので、登録したフォルダで起動した Claude Code にだけ現れる（ホームフォルダで起動して見えなかったことがある）
-  - `session_create` → `document_new` → `draw_rectangle` → `export_document`（PNG と SVG）まで成功
+- Added `LICENSE` (MIT). The copyright holder notation is `Copyright (c) 2026 RoundShape` (decided by the project owner).
+- Connected from Claude Code and checked that it works.
+  - Put the token in `~/.config/artserver/token` and started with `./target/debug/artserver --token-file ~/.config/artserver/token`
+  - Registered with `claude mcp add --transport http artserver ...`. It uses the default local scope, so it only appears in Claude Code started in the folder where it was registered (once it did not appear when Claude Code was started in the home folder)
+  - `session_create` → `document_new` → `draw_rectangle` → `export_document` (PNG and SVG) all succeeded
 
-### 見つかった不具合と修正
+### Bug found and fix
 
-| 項目 | 内容 |
+| Item | Details |
 |---|---|
-| 症状 | SVG 書き出しで、Claude Code には `{"bytes":445,"format":"svg","warnings":[]}` だけが表示され、SVG 本文が届かない |
-| 原因 | `content` に SVG 本文、`structuredContent` に要約という別々の中身を返していた。Claude Code は `structuredContent` があるとそちらを表示する。MCP の仕様では、両者は同じ結果を表すことになっている |
-| 修正 | SVG と PNG は `structuredContent` を付けず、本文だけを返す。警告があるときだけ2つ目のテキストとして `{"warnings":[...]}` を添える（`src/tools.rs` の `export_result`）。PDF は変更なし |
-| テスト | 単体テストを3件追加。E2E で、SVG と PNG の結果に `structuredContent` がないことを確かめるようにした |
-| 見逃した理由 | E2E は rmcp のクライアントで `content` を直接読んでいたため、Claude Code での見え方の違いを検出できなかった |
+| Symptom | On SVG export, Claude Code showed only `{"bytes":445,"format":"svg","warnings":[]}`, and the SVG body did not arrive |
+| Cause | It returned different content in the two places: the SVG body in `content` and a summary in `structuredContent`. When `structuredContent` is present, Claude Code shows that. In the MCP specification, both are meant to represent the same result |
+| Fix | For SVG and PNG, return only the body, without `structuredContent`. Only when there are warnings, add `{"warnings":[...]}` as a second text (`export_result` in `src/tools.rs`). PDF unchanged |
+| Tests | Added 3 unit tests. The E2E tests now check that SVG and PNG results have no `structuredContent` |
+| Why it was missed | The E2E tests read `content` directly with the rmcp client, so they could not detect the difference in how Claude Code shows the result |
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo build --all-targets` | 成功 |
-| `cargo test` | 30件すべて成功（単体20件、E2E 10件） |
-| `cargo clippy --all-targets` | 警告なし |
-| `cargo fmt --check` | 差分なし |
-| サーバーを再起動して Claude Code から SVG 書き出し | SVG 本文が表示された |
+| `cargo build --all-targets` | Succeeded |
+| `cargo test` | All 30 passed (20 unit, 10 E2E) |
+| `cargo clippy --all-targets` | No warnings |
+| `cargo fmt --check` | No changes |
+| Restarted the server and ran SVG export from Claude Code | The SVG body was shown |
 
-### 未確認
+### Not yet verified
 
-- Linux でのビルドと動作
-- 古いクライアント（`initialize` と `Mcp-Session-Id` を使うもの）での動作
-- Claude Code から PDF 書き出しを呼んだときの扱い。今は base64 を `structuredContent` に入れて返すので、大きい文書では会話が重くなるおそれがある
+- Building and running on Linux
+- Operation with older clients (those that use `initialize` and `Mcp-Session-Id`)
+- How a PDF export called from Claude Code is handled. It currently returns base64 in `structuredContent`, so large documents may weigh down the conversation
 
-## 2026-10-18 依存ライブラリのライセンス・脆弱性の検査
+## 2026-10-18 License and vulnerability checks of dependencies
 
-### やったこと
+### What was done
 
-- cargo-deny 0.20.2 と cargo-about 0.9.2 を Homebrew で導入した。
-- `deny.toml` を作った。
-  - 許可するライセンス: MIT、Apache-2.0、BSD-2-Clause、BSD-3-Clause、Zlib、Unicode-3.0、BSL-1.0。`jpeg-encoder` だけ IJG も許可
-  - 対象: macOS と Linux（aarch64・x86_64）。テスト専用の依存は除く
-  - 取得元: crates.io と、GitHub の storytold/vectorcraft・storytold/craft-libs だけ
-- `about.toml` と `about.hbs` を作り、`THIRD_PARTY_NOTICES.md` を要約から全文入りに置き換えた（286 クレート、ライセンス文 141 種類、約 226KB）。
-  - 前半は `about.hbs` に手書き: VectorCraft の由来、同梱フォント4種の著作権表示と OFL-1.1 の全文、Adobe CMap と PDFium フォントの BSD-3-Clause の全文、IJG の文言、krilla の MIT 表示。全文は、ビルドに使うソースのファイルからそのまま差し込んだ
-  - 後半は cargo about が `Cargo.lock` から生成
+- Installed cargo-deny 0.20.2 and cargo-about 0.9.2 with Homebrew.
+- Created `deny.toml`.
+  - Allowed licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, Zlib, Unicode-3.0, BSL-1.0. IJG is also allowed, for `jpeg-encoder` only
+  - Targets: macOS and Linux (aarch64, x86_64). Test-only dependencies are excluded
+  - Sources: only crates.io and GitHub's storytold/vectorcraft and storytold/craft-libs
+- Created `about.toml` and `about.hbs`, and replaced the summary in `THIRD_PARTY_NOTICES.md` with a version that contains the full texts (286 crates, 141 kinds of license text, about 226KB).
+  - The first half is handwritten in `about.hbs`: the origin of VectorCraft, the copyright notices of the 4 bundled fonts and the full text of OFL-1.1, the full BSD-3-Clause text for Adobe CMap and the PDFium fonts, the IJG wording, and krilla's MIT notice. The full texts were inserted as is from the source files used in the build
+  - The second half is generated by cargo about from `Cargo.lock`
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo deny check` | advisories ok、bans ok、licenses ok、sources ok。警告1件（yanked、下記） |
-| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功 |
+| `cargo deny check` | advisories ok, bans ok, licenses ok, sources ok. 1 warning (yanked, see below) |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | Succeeded |
 
-### 分かったことと対処
+### Findings and how they were handled
 
-| 項目 | 内容 |
+| Item | Details |
 |---|---|
-| LICENSE ファイルを同梱していないクレート | VectorCraft の21クレート、craft-pdf、krilla など32個で、著作権者が空欄のひな形（`Copyright (c) <year> <copyright holders>`）になっていた。`about.toml` の `clarify` で正しいファイルを指定した。chrono は cargo about に組み込みの対処（`workarounds`）で解決した |
-| 生成にネットワークが必要 | alloc-stdlib、wasmi（4クレート）、wasmparser はクレートに LICENSE がないため、元のリポジトリの該当 commit から取得する。checksum が合わなければ生成が失敗するので、文面が黙って変わることはない |
-| krilla | craft-libs に取り込まれた版に LICENSE がなく、自動では取れない。元のリポジトリの MIT 表示を `about.hbs` に手書きで載せた。生成部分では汎用の MIT の文面の下に並ぶ |
-| テスト専用の依存 | cargo deny は、`[dev-dependencies]` で有効にした rmcp の機能（reqwest、aws-lc-sys など）も数える。`cargo tree -e normal --target all` でバイナリには入らないことを確認した。数えすぎる分には安全側なのでそのままにした。cargo about は正しく除外する |
-| VectorCraft の参照 | commit 固定の git 依存はバージョン指定がないため、`wildcards` の検査に引っかかる。`deny.toml` で許可した |
-| yanked | `yoke-derive 0.8.3` が取り下げ済み（0.8.4 あり、取り下げ理由の記載なし）。`cargo update -p yoke-derive` で上げられるが未実施 |
+| Crates that do not ship a LICENSE file | 32 crates, including VectorCraft's 21 crates, craft-pdf and krilla, ended up with a template whose copyright holder was blank (`Copyright (c) <year> <copyright holders>`). Specified the correct files with `clarify` in `about.toml`. chrono was resolved by cargo about's built-in handling (`workarounds`) |
+| Generation needs the network | alloc-stdlib, wasmi (4 crates) and wasmparser have no LICENSE in the crate, so it is fetched from the matching commit in the original repository. If the checksum does not match, generation fails, so the text cannot change silently |
+| krilla | The version taken into craft-libs has no LICENSE, so it cannot be fetched automatically. Put the MIT notice from the original repository into `about.hbs` by hand. In the generated part, krilla is listed under the generic MIT text |
+| Test-only dependencies | cargo deny also counts the rmcp features enabled in `[dev-dependencies]` (reqwest, aws-lc-sys, etc.). Confirmed with `cargo tree -e normal --target all` that they are not in the binary. Counting too many errs on the safe side, so this was left as is. cargo about excludes them correctly |
+| Reference to VectorCraft | git dependencies pinned to a commit have no version requirement, so they trip the `wildcards` check. Allowed in `deny.toml` |
+| yanked | `yoke-derive 0.8.3` has been yanked (0.8.4 exists, no reason given for the yank). It can be upgraded with `cargo update -p yoke-derive`, but this has not been done |
 
-## 2026-10-18 Linux でのビルド確認（GitHub Actions）
+## 2026-10-18 Build check on Linux (GitHub Actions)
 
-### 方針
+### Policy
 
-Linux で ArtServer を使う人は少ない見込み。VectorCraft が Linux に対応していることもあり、ビルドが通る状態は保つが、テストと動作確認はしない（ユーザーの判断）。
+Few people are expected to use ArtServer on Linux. Since VectorCraft also supports Linux, the build is kept passing, but tests and operation checks are not done (the project owner's decision).
 
-### やったこと
+### What was done
 
-- `.github/workflows/build.yml` を追加した。push（main）と pull request のたびに、ubuntu-latest で `cargo build --locked` を実行する。
-  - 依存のビルド結果を Swatinem/rust-cache でキャッシュする
-  - 同じブランチで新しい push があれば、古い実行は止める
-  - 権限はリポジトリの読み取りだけ
+- Added `.github/workflows/build.yml`. On every push (main) and pull request, it runs `cargo build --locked` on ubuntu-latest.
+  - Caches the dependency build results with Swatinem/rust-cache
+  - If there is a new push on the same branch, the old run is stopped
+  - The only permission is reading the repository
 
-### 結果
+### Results
 
-| 項目 | 内容 |
+| Item | Details |
 |---|---|
-| 実行 | run 39084451667（commit `4390de1`） |
-| 結果 | 成功。警告・エラーなし |
-| 所要時間 | 全体 約16分半、うちビルド 15分49秒。ArtServer 自身のコンパイルとリンクは約3分 |
+| Run | run 39084451667 (commit `4390de1`) |
+| Result | Succeeded. No warnings or errors |
+| Duration | About 16.5 minutes in total, of which the build took 15m 49s. Compiling and linking ArtServer itself took about 3 minutes |
 
-- 時間がかかるのは、private リポジトリの GitHub のマシンが2コアであることと、開発用ビルドでも依存に `opt-level = 2` をかけているため。2回目からはキャッシュが効く。`Cargo.lock` が変わると再び長くなる
-- 長すぎる場合は `cargo check` に替える案がある（リンクまでは確かめられない）
-- GitHub の案内: `ubuntu-latest` は 2026-10-19 から順に Ubuntu 26 に切り替わる
+- It takes long because GitHub's machines for private repositories have 2 cores, and because `opt-level = 2` is applied to dependencies even in development builds. From the second run on, the cache takes effect. When `Cargo.lock` changes, it becomes long again
+- If it is too long, one option is to switch to `cargo check` (which cannot check linking)
+- GitHub's notice: `ubuntu-latest` switches to Ubuntu 26 gradually from 2026-10-19
 
-## 2026-10-18 VectorCraft のツールの組み込み（文字とフォント）
+## 2026-10-18 Integrating VectorCraft's tools (text and fonts)
 
-### 方針
+### Policy
 
-設計方針 1.1節（想定する利用形態）、4.6節（大きいデータの受け渡し）、4.7節（ツールの構成）をユーザーと決めた。4.7節は、VectorCraft の MCP のツールの部分（`call_tool` と trait `Backend`）を、ArtServer が実装する GuardedBackend 越しに使う方式。
+Decided design policy section 1.1 (intended usage), section 4.6 (passing large data) and section 4.7 (tool structure) with the project owner. Section 4.7 is the approach of using the tool part of VectorCraft's MCP (`call_tool` and the trait `Backend`) through the GuardedBackend that ArtServer implements.
 
-### やったこと
+### What was done
 
-- `vectorcraft-mcp` を同じ commit で依存に追加した（ツールの部分だけを使う）。新しい外部ライブラリは増えていない。
-- `src/backend.rs`（GuardedBackend）を追加した。`engine.execute` は許可リスト・パス・引数・文書数を検査してから実行、`engine.commands` は許可リストのコマンドだけ、`ui.render` はエンジンの PNG 書き出しで描画、それ以外（`ui.*`、`app.*` など）は断る。
-- `src/engine_host.rs`: 作業セッションのスレッドで、VectorCraft のツールを今のファイル制限・キャンセル・制限時間の中で動かせるようにした。コマンドの検査と実行を `execute_checked` にまとめた。
-- `src/policy.rs`: 許可リストを約75個に広げた。`file.new`・`document.open`・`document.export` は ArtServer のツールからだけ使える。パスの検査は値の型も見る（文字列は断り、図形の id は通す）。プラグインの効果は断る。
-- `src/tools.rs`: VectorCraft のツール16個を、作業セッションの `session` 引数を足して公開した。ArtServer のツールは6個（作業セッション、`document_new`、`import_svg`、`export_document`、新しい `list_fonts`）。重なる10個（`draw_rectangle` などの図形5つ、`set_paint`、`move_objects`、`inspect_document`、`undo`、`redo`）はやめた。サーバーの説明も更新した。
-- 起動時の設定 `--font-dirs`（`ARTSERVER_FONT_DIRS`）を追加した。OS のフォントに加えて、指定したフォルダのフォントを使う。
-- `about.toml` に `vectorcraft-mcp` を足し、`THIRD_PARTY_NOTICES.md` を生成し直した。README のツールと設定の表を更新した。
+- Added `vectorcraft-mcp` at the same commit as a dependency (only the tool part is used). No new external libraries were added.
+- Added `src/backend.rs` (GuardedBackend). `engine.execute` runs after checking the allowlist, paths, arguments and number of documents; `engine.commands` returns only the allowlisted commands; `ui.render` renders with the engine's PNG export; anything else (`ui.*`, `app.*`, etc.) is refused.
+- `src/engine_host.rs`: VectorCraft's tools can now run on the working session's thread under the existing file restrictions, cancellation and time limit. Combined command checking and execution into `execute_checked`.
+- `src/policy.rs`: expanded the allowlist to about 75 commands. `file.new`, `document.open` and `document.export` can be used only from ArtServer's own tools. The path check also looks at the value's type (strings are refused, shape ids pass). Plugin effects are refused.
+- `src/tools.rs`: exposed 16 VectorCraft tools, with the working session's `session` argument added. ArtServer's own tools are 6 (working session, `document_new`, `import_svg`, `export_document`, the new `list_fonts`). Dropped the 10 overlapping ones (the 5 shapes such as `draw_rectangle`, `set_paint`, `move_objects`, `inspect_document`, `undo`, `redo`). Also updated the server description.
+- Added the startup setting `--font-dirs` (`ARTSERVER_FONT_DIRS`). In addition to the OS fonts, fonts in the specified folders are used.
+- Added `vectorcraft-mcp` to `about.toml` and regenerated `THIRD_PARTY_NOTICES.md`. Updated the tool and settings tables in the README.
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo build --all-targets --offline --locked` | 成功 |
-| `cargo test --offline --locked` | 43件すべて成功（単体30件、E2E 13件） |
-| `cargo clippy --all-targets` | 警告なし |
-| `cargo fmt --check` | 差分なし |
-| `cargo deny check` | advisories ok、bans ok、licenses ok、sources ok（yanked の警告1件は従来どおり） |
-| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功（`vectorcraft-mcp` が VectorCraft の MIT の欄に加わった） |
+| `cargo build --all-targets --offline --locked` | Succeeded |
+| `cargo test --offline --locked` | All 43 passed (30 unit, 13 E2E) |
+| `cargo clippy --all-targets` | No warnings |
+| `cargo fmt --check` | No changes |
+| `cargo deny check` | advisories ok, bans ok, licenses ok, sources ok (the 1 yanked warning, as before) |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | Succeeded (`vectorcraft-mcp` was added to VectorCraft's MIT section) |
 
-主な新しいテスト: VectorCraft のツールが GuardedBackend の上で動くこと（日本語の文字、図形、変形、プレビュー）、許可していないコマンドがどのツールからも断られること、`ui.*`・`app.*` が断られること、`command_list` が許可リストのコマンドだけを返すこと、許可リストの全 id がエンジンに存在すること、開放しない分類が許可リストに入っていないこと、公開するツールの一覧がちょうど22個であること、フォントの一覧と絞り込み。
+Main new tests: VectorCraft's tools work on top of GuardedBackend (Japanese text, shapes, transforms, preview); commands that are not allowed are refused from every tool; `ui.*` and `app.*` are refused; `command_list` returns only the allowlisted commands; every id in the allowlist exists in the engine; categories that are not opened up are not in the allowlist; the list of exposed tools is exactly 22; font listing and filtering.
 
-### 気づいたこと
+### Observations
 
-- `--offline` で `Cargo.lock` を更新させると、関係のない箇所（Windows 用の `windows-sys` の参照）まで古いバージョンに寄せられた。元の `Cargo.lock` に `vectorcraft-mcp` の分だけを差し込み、`--locked` で通ることを確かめた。
+- Letting `Cargo.lock` update with `--offline` also moved unrelated parts (the `windows-sys` references for Windows) to older versions. Inserted only the `vectorcraft-mcp` part into the original `Cargo.lock` and confirmed that it passes with `--locked`.
 
-### 未確認
+### Not yet verified
 
-- Claude Code から、新しいツールを使った確認（ArtServer の再起動が必要）
-- 日本語の文字が、ヒラギノなど実際の日本語フォントで描かれているか（テストは文字の配置と書き出しだけを確かめている）
-- エンジンを動かしてのコマンド数の確認（約760は静的に数えた値）
+- Checking from Claude Code with the new tools (ArtServer needs a restart)
+- Whether Japanese text is drawn with actual Japanese fonts such as Hiragino (the tests only check text layout and export)
+- Checking the number of commands by running the engine (about 760 is a static count)
 
-## 2026-10-18 Illustrator での確認と、SVG の文字の太さの修正
+## 2026-10-18 Check in Illustrator, and fix for the text weight in SVG
 
-### 確認したこと
+### What was checked
 
-- 新しいバイナリの ArtServer に curl で要求を送り、日本語の文字（ヒラギノ角ゴ W6、ヒラギノ明朝 W6、ヒラギノ丸ゴ W4、縦書き）と図形の文書を作って、`~/Desktop/artserver-output/` に SVG・アウトライン化した SVG・PDF を書き出した。フォントはすべて「exact」（ぴったり一致）。
-  - この会話の Claude Code はツールの一覧を読み込み直していなかったため、新しいツールを Claude Code から直接は使っていない（未確認のまま）。
-- ユーザーが Illustrator で開いたところ、アウトライン化した SVG は正しく、文字を残した SVG では角ゴと明朝が細い太さ（W3 など）で表示された。
+- Sent requests with curl to ArtServer running the new binary, created a document with Japanese text (Hiragino Kaku Gothic W6, Hiragino Mincho W6, Hiragino Maru Gothic W4, vertical type) and shapes, and exported SVG, SVG converted to outlines, and PDF to `~/Desktop/artserver-output/`. All fonts were "exact" (an exact match).
+  - Claude Code in this conversation had not reloaded the tool list, so the new tools were not used directly from Claude Code (still not yet verified).
+- When the project owner opened the files in Illustrator, the SVG converted to outlines was correct, but in the SVG that kept the text, Kaku Gothic and Mincho were shown in a thin weight (such as W3).
 
-### 原因と修正
+### Cause and fix
 
-| 項目 | 内容 |
+| Item | Details |
 |---|---|
-| 原因 | VectorCraft の SVG の書き出しは、スタイル名から太さを `vectorcraft_text::style_weight` で決める。この関数は英語の単語（Light、Bold など）しか読まないため「W6」は 400 になり、400 のときは `font-weight` を書かない |
-| 直し方 | ユーザーと決めた方針（設計方針 8章）で、`vectorcraft-svg` だけを `vendor/vectorcraft-svg` にコピーし、`src/css.rs` の `font_descriptor` で W0〜W9 を数字 × 100 の太さとして読むようにした。`Cargo.toml` の `[patch."https://github.com/storytold/vectorcraft"]` で差し替える |
-| 影響の範囲 | SVG（と CSS）の書き出しだけ。フォントを選ぶ処理は変えていない |
-| 記録 | `vendor/README.md`（修正の内容、載せ直しの手順）、`vendor/patches/vectorcraft-svg.diff`（元のコードとの差分） |
-| ライセンス | コピーした crate に VectorCraft の `LICENSE-MIT` と `LICENSE-APACHE` を置いた。`cargo about` がそれを ArtServer 自身のライセンスとも数えたので、`about.toml` で ArtServer のライセンスのファイルを明示した |
+| Cause | VectorCraft's SVG export decides the weight from the style name with `vectorcraft_text::style_weight`. This function only reads English words (Light, Bold, etc.), so "W6" becomes 400, and at 400 it does not write `font-weight` |
+| How it was fixed | Following the policy decided with the project owner (design policy chapter 8), copied only `vectorcraft-svg` to `vendor/vectorcraft-svg`, and made `font_descriptor` in `src/css.rs` read W0–W9 as a weight of the number × 100. It is swapped in with `[patch."https://github.com/storytold/vectorcraft"]` in `Cargo.toml` |
+| Scope of impact | Only SVG (and CSS) export. The font selection logic was not changed |
+| Records | `vendor/README.md` (what the fix is, steps for reapplying the patch), `vendor/patches/vectorcraft-svg.diff` (diff against the original code) |
+| License | Placed VectorCraft's `LICENSE-MIT` and `LICENSE-APACHE` in the copied crate. `cargo about` also counted them as ArtServer's own license, so ArtServer's license file was specified explicitly in `about.toml` |
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo build --all-targets --offline` | 成功。`Cargo.lock` の変更は `vectorcraft-svg` の取得元の1行だけ |
-| `cargo test --offline --locked` | 44件すべて成功（単体31件、E2E 13件）。新しいテスト: W6・W3 のスタイル名が SVG の `font-weight` 600・300 になり、Regular は付かず、Bold は bold のまま |
-| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
-| `cargo deny check` | すべて ok（yanked の警告1件は従来どおり） |
-| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功 |
+| `cargo build --all-targets --offline` | Succeeded. The only change to `Cargo.lock` was one line: the source of `vectorcraft-svg` |
+| `cargo test --offline --locked` | All 44 passed (31 unit, 13 E2E). New test: the W6 and W3 style names become SVG `font-weight` 600 and 300, Regular gets none, and Bold stays bold |
+| `cargo clippy --all-targets` / `cargo fmt --check` | No warnings / no changes |
+| `cargo deny check` | All ok (the 1 yanked warning, as before) |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | Succeeded |
 
-### 修正後の確認
+### Check after the fix
 
-- ArtServer を修正後のバイナリで起動し直し、サンプルを書き出し直した。`sample.svg` では、ヒラギノ角ゴ W6 と明朝 W6 の文字に `font-weight="600"` が付いた（丸ゴ W4 は標準の太さなので付かない）。
-- ユーザーが Illustrator で開き、角ゴと明朝が W6 の太さで表示されることを確認した。PostScript 名を書く追加の修正は不要だった。
-- 本家 VectorCraft に Issue で報告した: [storytold/vectorcraft#2873](https://github.com/storytold/vectorcraft/issues/2873)。重複する報告はなく、本家の `main`（`73f40e3`）でも未修正だった。文面はユーザーが確認し、投稿をユーザーの許可のもとで行った。
+- Restarted ArtServer with the fixed binary and exported the samples again. In `sample.svg`, the Hiragino Kaku Gothic W6 and Mincho W6 text got `font-weight="600"` (Maru Gothic W4 is the normal weight, so it gets none).
+- The project owner opened it in Illustrator and confirmed that Kaku Gothic and Mincho are shown in the W6 weight. An additional fix to write PostScript names was not needed.
+- Reported it to upstream VectorCraft in an Issue: [storytold/vectorcraft#2873](https://github.com/storytold/vectorcraft/issues/2873). There was no duplicate report, and it was not fixed in upstream `main` (`73f40e3`) either. The project owner checked the wording, and it was posted with the project owner's permission.
 
-### 未確認
+### Not yet verified
 
-- Claude Code から新しいツールを使った確認（ツールの一覧の読み込み直しが必要）
+- Checking from Claude Code with the new tools (the tool list needs to be reloaded)
 
-## 2026-10-18 大きい書き出し結果の URL での受け渡し
+## 2026-10-18 Passing large exports by URL
 
-### 方針
+### Policy
 
-設計方針 4.6節のうち、書き出しの部分を実装した。預かる場所は**メモリ**、取りに来る窓口の認証は **MCP と同じ Bearer トークン**（ユーザーが決定）。
+Implemented the export part of design policy section 4.6. The file store is kept in **memory**, and the endpoint that files are fetched from is authenticated with **the same Bearer token as MCP** (decided by the project owner).
 
-### やったこと
+### What was done
 
-- `src/files.rs` を追加した。書き出し結果の預かり場所（`FileStore`）と、`GET /files/{id}` の窓口。
-  - 預けた主体だけが取れる（ほかの主体には 404）。ID は32バイトの乱数
-  - 期限は既定 10 分、合計は既定 256MiB（超えたら断る）、1つの作業セッションにつき 8 個（超えたら古いものから捨てる）
-  - 期限が過ぎたものは60秒ごとの掃除で、閉じた作業セッションのものは `session_close` で捨てる
-  - Host と Origin を `/mcp` と同じ許可リストで検査する
-  - ファイル名は文書の名前から作り、`Content-Disposition` に UTF-8 の名前も書く
-- `export_document` に `delivery`（auto・inline・url）を足した。auto では SVG は 32KB まで、PNG は 256KB まで返事に入れ、PDF とそれより大きいものは URL を返す。
-- 起動時の設定 `--file-ttl-secs`・`--max-file-mib` を追加した。
-- サーバーの説明とツールの説明に、URL はトークンを付けて取ることを書いた。README に「大きい書き出し結果の受け取り」の節を足した。
+- Added `src/files.rs`: the file store for exports (`FileStore`) and the `GET /files/{id}` endpoint.
+  - Only the principal that stored a file can fetch it (other principals get 404). IDs are 32 random bytes
+  - Expiry defaults to 10 minutes, the total defaults to 256MiB (refused when exceeded), 8 files per working session (when exceeded, the oldest are discarded first)
+  - Expired files are discarded by a cleanup every 60 seconds, and files of closed working sessions by `session_close`
+  - Host and Origin are checked against the same allowlist as `/mcp`
+  - The file name is made from the document name, and a UTF-8 name is also written in `Content-Disposition`
+- Added `delivery` (auto, inline, url) to `export_document`. With auto, SVG up to 32KB and PNG up to 256KB are put in the response, and PDF and anything larger is returned as a URL.
+- Added the startup settings `--file-ttl-secs` and `--max-file-mib`.
+- Wrote in the server description and the tool description that the URL is fetched with the token. Added a "Receiving large exports" section to the README.
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo build --all-targets --offline` | 成功（依存は増えておらず、`Cargo.lock` も変わっていない） |
-| `cargo test --offline --locked` | 52件すべて成功（単体38件、E2E 14件） |
-| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+| `cargo build --all-targets --offline` | Succeeded (no new dependencies, and `Cargo.lock` did not change) |
+| `cargo test --offline --locked` | All 52 passed (38 unit, 14 E2E) |
+| `cargo clippy --all-targets` / `cargo fmt --check` | No warnings / no changes |
 
-主な新しいテスト: 預けた主体にだけ返ること、期限切れ、作業セッションごとの個数の上限、合計の上限、作業セッションを閉じたときの削除、ファイル名、Host・Origin の判定（単体）。PDF が URL で返り、トークン付きの GET で PDF が取れること、トークンなしは 401、違う ID は 404、許可されていない Host・Origin は 403、SVG も `delivery: url` で URL にできること、作業セッションを閉じると 404 になること（E2E）。
+Main new tests: a file is returned only to the principal that stored it, expiry, the per-working-session count limit, the total limit, deletion when a working session is closed, file names, Host and Origin checks (unit). A PDF is returned as a URL and can be fetched with a GET with the token, 401 without a token, 404 for a wrong ID, 403 for a Host or Origin that is not allowed, SVG can also be returned as a URL with `delivery: url`, 404 after the working session is closed (E2E).
 
-### 気づいたこと
+### Observations
 
-- AI（Claude Code）は ArtServer のトークンを知らないので、URL を取りに行かせるには、トークンのファイルの場所を伝えておく必要がある（README に記載）。使い勝手が悪ければ、短い期限の、URL だけで取れる方式との比較を改めて検討する。
+- The AI (Claude Code) does not know ArtServer's token, so to have it fetch a URL, it must be told where the token file is (described in the README). If this proves inconvenient, compare again with an approach where a short-lived URL alone is enough.
 
-### Claude Code での確認（2026-10-18）
+### Check in Claude Code (2026-10-18)
 
-ArtServer を起動し直し、Claude Code を `claude -c` で起動し直して（`/mcp` の Reconnect だけではツールの一覧が入れ替わらなかった）、AI が新しいツールを直接使えることを確かめた。
+Restarted ArtServer and restarted Claude Code with `claude -c` (Reconnect in `/mcp` alone did not replace the tool list), and confirmed that the AI can use the new tools directly.
 
-| 確かめたこと | 結果 |
+| What was checked | Result |
 |---|---|
-| `list_fonts`（絞り込み、スタイルの一覧） | ヒラギノ丸ゴの2ファミリー、ヒラギノ角ゴの W0〜W9 が返った |
-| `add_text`（日本語、フォントの指定） | 角ゴと丸ゴで文字を置けた |
-| `command_run`（`text.setStyle`、`text.setText`、`text.fonts`） | W6 への変更、文字の差し替え、使用フォントの確認ができた |
-| `command_run` で許可していないコマンド（`prefs.set`） | 「not allowed」で断られた |
-| `render_preview` | プレビュー画像が表示された |
-| `export_document`（PDF） | 中身の代わりに URL が返った。トークンを付けた curl で PDF（約13KB）を取れ、トークンなしは 401 |
+| `list_fonts` (filtering, list of styles) | Returned the 2 Hiragino Maru Gothic families and Hiragino Kaku Gothic W0–W9 |
+| `add_text` (Japanese, with a font specified) | Placed text in Kaku Gothic and Maru Gothic |
+| `command_run` (`text.setStyle`, `text.setText`, `text.fonts`) | Changing to W6, replacing the text and checking the fonts in use all worked |
+| `command_run` with a command that is not allowed (`prefs.set`) | Refused with "not allowed" |
+| `render_preview` | The preview image was shown |
+| `export_document` (PDF) | A URL was returned instead of the content. Fetched the PDF (about 13KB) with curl with the token; 401 without the token |
 
-- `claude -c` で再開した会話では、前からあるツール（`export_document` など）の説明が古いまま AI に見えていた（`delivery` の引数が見えない）。既定の返し方で動くので確認には支障なかったが、新しい会話で始めれば最新の説明が見えるはず。
-- AI が URL を取りに行けたのは、トークンのファイルの場所を知っていたため。ほかの環境では、README のとおり場所を伝える必要がある。
+- In the conversation resumed with `claude -c`, the AI still saw the old descriptions of existing tools (such as `export_document`) (the `delivery` argument was not visible). It works with the default delivery, so this did not affect the check, but a new conversation should show the latest descriptions.
+- The AI could fetch the URL because it knew where the token file was. In other environments, it needs to be told the location, as described in the README.
 
-## 2026-10-18 書き出し結果の受け取りをトークン不要の URL に変更
+## 2026-10-18 Changed receiving exports to URLs that need no token
 
-### 経緯
+### Background
 
-Claude Code での確認の後、ユーザーが返ってきた URL をブラウザで開いたところ、`unauthorized` になった（トークンを求める設計どおりの動き）。ブラウザや、curl を実行できないクライアント（Claude Desktop など）では取れず、AI にもトークンの場所を教える必要があるため、ユーザーの判断で「URL だけで取れる（期限付き）」方式に変えた。
+After the check in Claude Code, the project owner opened the returned URL in a browser and got `unauthorized` (the designed behavior, since a token was required). Browsers and clients that cannot run curl (such as Claude Desktop) could not fetch it, and the AI also had to be told where the token is, so by the project owner's decision the approach was changed to "fetchable with the URL alone (with an expiry)".
 
-### やったこと
+### What was done
 
-- `src/files.rs`: 預けた主体の確認をやめ、URL の ID（256ビットの乱数）だけで取れるようにした。期限（既定 10 分）までは何度でも取れる（1回取ったら消す方式は、リンクの先読みで消えるおそれがあるので採らなかった）。ブラウザの中で開かせず必ずダウンロードにするヘッダーを足した（`Content-Security-Policy: sandbox`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`）。
-- `src/lib.rs`: `/files/{id}` をトークンの検査の外に移した。Host と Origin の検査は残した。
-- `src/tools.rs`: サーバーの説明、`export_document` の説明、応答の文言（`auth` → `note`）を、トークン不要に合わせて直した。
-- README・設計方針（4.6節、13.2節）を更新した。
+- `src/files.rs`: stopped checking the principal that stored the file, so it can be fetched with the URL's ID (256 random bits) alone. It can be fetched any number of times until it expires (default 10 minutes) (deleting the file after one fetch was not adopted, because link prefetching could delete it). Added headers so that it is never opened inside the browser and is always downloaded (`Content-Security-Policy: sandbox`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`).
+- `src/lib.rs`: moved `/files/{id}` outside the token check. Kept the Host and Origin checks.
+- `src/tools.rs`: updated the server description, the `export_document` description and the response wording (`auth` → `note`) to match not needing a token.
+- Updated the README and the design policy (sections 4.6 and 13.2).
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo build --all-targets --offline` | 成功 |
-| `cargo test --offline --locked` | 52件すべて成功（単体38件、E2E 14件）。E2E で、トークンなしで PDF が取れること（2回取れること）、安全のためのヘッダー、違う ID は 404、許可されていない Host・Origin は 403、作業セッションを閉じると 404 を確かめた |
-| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+| `cargo build --all-targets --offline` | Succeeded |
+| `cargo test --offline --locked` | All 52 passed (38 unit, 14 E2E). The E2E tests checked that the PDF can be fetched without a token (and fetched twice), the security headers, 404 for a wrong ID, 403 for a Host or Origin that is not allowed, and 404 after the working session is closed |
+| `cargo clippy --all-targets` / `cargo fmt --check` | No warnings / no changes |
 
-### ブラウザでの確認
+### Check in a browser
 
-ArtServer を起動し直し、Claude Code から PDF を書き出して返ってきた URL を、ユーザーがブラウザで開いた。トークンなしで `browser-download-test.pdf` としてダウンロードできた。
+Restarted ArtServer, exported a PDF from Claude Code, and the project owner opened the returned URL in a browser. It downloaded as `browser-download-test.pdf` without a token.
 
-## 2026-10-18 `--public-url` の追加
+## 2026-10-18 Added `--public-url`
 
-### 経緯
+### Background
 
-リバースプロキシの後ろでは、書き出し結果の URL がプロキシの設定（`Host` と `X-Forwarded-Proto` を渡すか）次第になり、パスの前置き（`/artserver/` など）を付ける構成には対応できなかった。ユーザーの指示で、外から見える URL を起動時に指定する `--public-url`（`ARTSERVER_PUBLIC_URL`）を足した。
+Behind a reverse proxy, the export URL depended on the proxy settings (whether it passes `Host` and `X-Forwarded-Proto`), and setups that add a path prefix (such as `/artserver/`) were not supported. At the project owner's instruction, added `--public-url` (`ARTSERVER_PUBLIC_URL`), which sets the externally visible URL at startup.
 
-### やったこと
+### What was done
 
-- `src/config.rs`: `--public-url` を追加した。http か https の完全な URL だけを認め、利用者情報・クエリは認めない（誤りがあれば起動しない）。末尾の `/` は取る。ホスト名は `--allowed-hosts` に自動で加える。
-- `src/tools.rs`・`src/lib.rs`: `--public-url` があれば、書き出し結果の URL をその後ろに `/files/{id}` を付けて作る。なければ今までどおり `Host` と `X-Forwarded-Proto` から作る。
-- README（設定の表、リバースプロキシの説明）と設計方針（4.6節）を更新した。
+- `src/config.rs`: added `--public-url`. Only a full http or https URL is accepted, and user info and queries are not accepted (if it is wrong, the server does not start). A trailing `/` is removed. The host name is added to `--allowed-hosts` automatically.
+- `src/tools.rs`, `src/lib.rs`: when `--public-url` is set, the export URL is built by appending `/files/{id}` to it. Otherwise, it is built from `Host` and `X-Forwarded-Proto` as before.
+- Updated the README (settings table, reverse proxy explanation) and the design policy (section 4.6).
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo test --offline --locked` | 54件すべて成功（単体39件、E2E 15件）。新しいテスト: `--public-url` の検査とホスト名の自動追加（単体）、`--public-url` を指定すると URL が `https://example.co.jp/artserver/files/…` になり、ArtServer 自身は `/files/…` で返すこと（E2E） |
-| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
+| `cargo test --offline --locked` | All 54 passed (39 unit, 15 E2E). New tests: the `--public-url` check and automatic addition of the host name (unit); with `--public-url` set, the URL becomes `https://example.com/artserver/files/…`, and ArtServer itself serves it at `/files/…` (E2E) |
+| `cargo clippy --all-targets` / `cargo fmt --check` | No warnings / no changes |
 
-## 2026-10-18 Windows でのビルド確認（GitHub Actions、手動実行）
+## 2026-10-18 Build check on Windows (GitHub Actions, manual run)
 
-- `.github/workflows/build-windows.yml` を追加した。`windows-latest` で `cargo build --locked` を実行する（テストはしない）。private リポジトリでは Windows のマシンは無料枠を Linux の約2倍使うので、push では動かさず、手動で実行したときだけ動く（`gh workflow run build-windows.yml` または Actions の画面）。
-- 初回の実行（run 39120244900）は成功。警告・エラーなし。全体で約34分、うちビルド 32分20秒。`vendor/vectorcraft-svg` も Windows で差し替わってビルドされた。
-- これで macOS・Linux・Windows の3つでビルドが通ることを確かめた。Windows での動作（実機での実行）は未確認。
+- Added `.github/workflows/build-windows.yml`. It runs `cargo build --locked` on `windows-latest` (no tests). For private repositories, Windows machines use up the free quota about twice as fast as Linux, so it does not run on push and runs only when started manually (`gh workflow run build-windows.yml` or the Actions screen).
+- The first run (run 39120244900) succeeded. No warnings or errors. About 34 minutes in total, of which the build took 32m 20s. `vendor/vectorcraft-svg` was also swapped in and built on Windows.
+- This confirmed that the build passes on all three: macOS, Linux and Windows. Operation on Windows (running on a real machine) is not yet verified.
 
-## 2026-10-18 VectorCraft を v0.13.1 に更新
+## 2026-10-18 Updated VectorCraft to v0.13.1
 
-### 方針
+### Policy
 
-上げ先は、ユーザーの選択で正式なリリースの v0.13.1（commit `904f0fe5227bd987d55319e89a38b4b8f046998c`、2026-10-18 公開、前の固定 `fdac986` から142 commit 先）にした。最新の main（`797e899`）ではなく、リリースの区切りを使う。
+The project owner chose the official release v0.13.1 as the target (commit `904f0fe5227bd987d55319e89a38b4b8f046998c`, published 2026-10-18, 142 commits ahead of the previous pin `fdac986`). A release point is used rather than the latest main (`797e899`).
 
-### 変わった点と対応
+### What changed and how it was handled
 
-| 項目 | 内容 |
+| Item | Details |
 |---|---|
-| commit | `Cargo.toml` の VectorCraft の4か所と、`vendor/vectorcraft-svg/Cargo.toml` の依存を `904f0fe` に上げた |
-| PDF 用の差し替え・ビルドの設定 | VectorCraft v0.13.1 でも同じ（craft-libs `ca50d63`）。変更なし |
-| 新しい依存 | `craft-docpath`（craft-libs、rev `82a24b0`。文書に保存されたパスを開いてよいかを判定する）。`vectorcraft-svg` が使うので `vendor/` の `Cargo.toml` に足した。`about.toml` にライセンスの指定を足した |
-| `vendor/vectorcraft-svg` | v0.13.1 のコードをコピーし直した。本家の `font_descriptor` が可変フォントの `wght` 軸を先に見る形に変わっていたので、差分は当てずに内容を読んで修正を載せ直し、差分のファイルを作り直した。#2873 は v0.13.1 でも直っていない |
-| yoke-derive | 0.8.3（取り下げ済み）から 0.8.4 に上げた。`cargo deny` の yanked の警告が消えた |
-| ArtServer のコード | 変更不要だった（公開 API の変化は小さく、VectorCraft の MCP のツールの名前も同じ） |
-| ライセンス表示 | `about.hbs` の VectorCraft と craft-libs の記載を更新し、生成し直した |
+| commit | Raised the 4 VectorCraft entries in `Cargo.toml` and the dependency in `vendor/vectorcraft-svg/Cargo.toml` to `904f0fe` |
+| PDF patches and build settings | Same in VectorCraft v0.13.1 (craft-libs `ca50d63`). Unchanged |
+| New dependency | `craft-docpath` (craft-libs, rev `82a24b0`. Decides whether a path saved in a document may be opened). `vectorcraft-svg` uses it, so it was added to the `Cargo.toml` in `vendor/`. Added its license setting to `about.toml` |
+| `vendor/vectorcraft-svg` | Copied the v0.13.1 code again. Upstream's `font_descriptor` had changed to look at the variable font `wght` axis first, so instead of applying the diff, read the code and reapplied the patch by hand, then recreated the diff file. #2873 is still not fixed in v0.13.1 |
+| yoke-derive | Upgraded from 0.8.3 (yanked) to 0.8.4. The `cargo deny` yanked warning went away |
+| ArtServer's code | No changes needed (the public API changed little, and the names of VectorCraft's MCP tools are the same) |
+| License notices | Updated the VectorCraft and craft-libs entries in `about.hbs` and regenerated |
 
-### 実行したコマンドと結果
+### Commands run and results
 
-| コマンド | 結果 |
+| Command | Result |
 |---|---|
-| `cargo fetch` | 成功 |
-| `cargo build --all-targets --locked` | 成功（警告・エラーなし、約1分14秒） |
-| `cargo test --locked` | 54件すべて成功（単体39件、E2E 15件）。許可リストの全コマンドが v0.13.1 のエンジンに存在すること、VectorCraft のツール16個の公開、SVG の太さの修正も含む |
-| `cargo clippy --all-targets` / `cargo fmt --check` | 警告なし / 差分なし |
-| `cargo deny check` | すべて ok（警告なし） |
-| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | 成功 |
+| `cargo fetch` | Succeeded |
+| `cargo build --all-targets --locked` | Succeeded (no warnings or errors, about 1m 14s) |
+| `cargo test --locked` | All 54 passed (39 unit, 15 E2E). Includes checks that every allowlisted command exists in the v0.13.1 engine, that the 16 VectorCraft tools are exposed, and the SVG weight fix |
+| `cargo clippy --all-targets` / `cargo fmt --check` | No warnings / no changes |
+| `cargo deny check` | All ok (no warnings) |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | Succeeded |
 
-### GitHub Actions でのビルド
+### Builds on GitHub Actions
 
-| 環境 | 結果 |
+| Environment | Result |
 |---|---|
-| Linux（push で自動、run 39123583009） | 成功。警告・エラーなし。全体 約12分半、うちビルド 10分45秒 |
-| Windows（手動、run 39123684572） | 成功。警告・エラーなし。全体 約33分、うちビルド 28分33秒（VectorCraft の crate をすべてビルドし直したため、キャッシュがあっても長い） |
+| Linux (automatic on push, run 39123583009) | Succeeded. No warnings or errors. About 12.5 minutes in total, of which the build took 10m 45s |
+| Windows (manual, run 39123684572) | Succeeded. No warnings or errors. About 33 minutes in total, of which the build took 28m 33s (long even with the cache, because all VectorCraft crates were rebuilt) |
 
-### Claude Code からの動作の確認
+### Checking operation from Claude Code
 
-ArtServer を v0.13.1 のバイナリで起動し直し、Claude Code から確かめた。すべて今までどおり動いた。
+Restarted ArtServer with the v0.13.1 binary and checked from Claude Code. Everything worked as before.
 
-| 確かめたこと | 結果 |
+| What was checked | Result |
 |---|---|
-| `list_fonts`、`draw_shape`（星）、`transform`（移動と回転）、`add_text`（角ゴ・明朝） | 動いた |
-| `command_run`（`text.setStyle` で W6、`text.setText`、`text.fonts`） | 動いた。2つのフォントとも exact |
-| `command_run` で許可していないコマンド（`prefs.set`） | 断られた |
-| `render_preview` | プレビュー画像が表示された |
-| `export_document`（SVG） | 本文が返り、角ゴ・明朝の文字に `font-weight="600"` が付いていた（`vendor/` の修正が v0.13.1 でも効いている）。v0.13.1 から、文字が `<tspan>` で書かれるようになった |
-| `export_document`（PDF） | URL が返り、トークンなしで取れた。ヒラギノ角ゴ W6・明朝 W6 が埋め込まれていた |
+| `list_fonts`, `draw_shape` (star), `transform` (move and rotate), `add_text` (Kaku Gothic, Mincho) | Worked |
+| `command_run` (W6 with `text.setStyle`, `text.setText`, `text.fonts`) | Worked. Both fonts exact |
+| `command_run` with a command that is not allowed (`prefs.set`) | Refused |
+| `render_preview` | The preview image was shown |
+| `export_document` (SVG) | The body was returned, and the Kaku Gothic and Mincho text had `font-weight="600"` (the `vendor/` fix still works in v0.13.1). Since v0.13.1, text is written with `<tspan>` |
+| `export_document` (PDF) | A URL was returned and could be fetched without a token. Hiragino Kaku Gothic W6 and Mincho W6 were embedded |
 
-### 次の作業
+### Next steps
 
-1. 読み込みのアップロード（PDF や `.ai` の読み込みを許可するとき。設計方針 4.6節）
+1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)

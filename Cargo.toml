@@ -8,14 +8,14 @@ description = "Headless vector graphics server driven over MCP (Streamable HTTP)
 publish = false
 
 [dependencies]
-# VectorCraft のエンジン。commit を固定して参照する（docs/design-policy.md 8章）
+# The VectorCraft engine, pinned to a commit (docs/design-policy.md chapter 8)
 vectorcraft-engine = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
 vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
 vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
-# VectorCraft の MCP のツールの部分だけを使う（call_tool と Backend。docs/design-policy.md 4.7節）
+# Only the tool part of VectorCraft's MCP (call_tool and Backend; docs/design-policy.md section 4.7)
 vectorcraft-mcp = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
 
-# MCP（公式 Rust SDK）。マイナー間でトランスポートが変わることがあるためマイナーまで固定する
+# MCP (the official Rust SDK). Pinned to the minor version, because the transport sometimes changes between minor versions
 rmcp = { version = "~3.5", features = ["server", "macros", "transport-streamable-http-server"] }
 axum = "0.8"
 http = "1"
@@ -47,7 +47,7 @@ panic = "deny"
 todo = "deny"
 unimplemented = "deny"
 
-# VectorCraft のワークスペース設定は依存側に引き継がれないため写している（VectorCraft Cargo.toml:116-130）
+# VectorCraft's workspace settings don't carry over to dependents, so they are copied here (VectorCraft Cargo.toml:116-130)
 [profile.dev.package."*"]
 opt-level = 2
 
@@ -58,13 +58,13 @@ opt-level = 1
 lto = "thin"
 codegen-units = 1
 
-# PDF バックエンドを craft-libs の修正版に差し替える。VectorCraft の rev を上げるときは同期すること
+# Replace the PDF backend with craft-libs' patched version. Keep this in sync when raising VectorCraft's rev
 [patch.crates-io]
 hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 hayro-interpret = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 krilla = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 
-# VectorCraft の不具合を ArtServer で直した crate。修正の内容と載せ直しの手順は vendor/README.md
+# VectorCraft crates fixed by ArtServer. The fixes and how to reapply them are in vendor/README.md
 [patch."https://github.com/storytold/vectorcraft"]
 vectorcraft-svg = { path = "vendor/vectorcraft-svg" }

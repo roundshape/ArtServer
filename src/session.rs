@@ -1,7 +1,7 @@
-//! 作業セッションの表（ハンドル ↔ エンジン実行器）。
+//! The table of working sessions (handle ↔ engine executor).
 //!
-//! MCP 2026-07-28 版ではプロトコル上のセッションがなくなったため、作業の状態は ArtServer が
-//! 発行するハンドルで識別し、ツールの引数で受け渡す（docs/design-policy.md 4.5節）。
+//! MCP 2026-07-28 removed sessions from the protocol, so the working state is identified by a handle that
+//! ArtServer issues and passed in tool arguments (docs/design-policy.md section 4.5).
 
 use std::collections::HashMap;
 use std::fmt;
@@ -13,13 +13,13 @@ use vectorcraft_engine::file_access::AutomationRoots;
 use crate::auth::Principal;
 use crate::engine_host::{EngineHost, EngineLimits};
 
-/// ハンドルの乱数のバイト数。
+/// Number of random bytes in a handle.
 const HANDLE_BYTES: usize = 32;
 
-/// 作業セッションの操作の失敗。
+/// A failed operation on working sessions.
 #[derive(Debug)]
 pub enum SessionError {
-    /// 存在しない、期限切れ、または別の主体のハンドル（区別して見せない）
+    /// A handle that doesn't exist, has expired or belongs to another principal (not told apart)
     Unknown,
     TooMany(usize),
     Internal(String),
@@ -41,7 +41,7 @@ struct Entry {
     last_used: Instant,
 }
 
-/// 作業セッションの表。
+/// The table of working sessions.
 pub struct Sessions {
     entries: Mutex<HashMap<String, Entry>>,
     max_sessions: usize,
@@ -65,7 +65,7 @@ impl Sessions {
         self.entries.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// 新しい作業セッションを作り、そのハンドルを返す。
+    /// Creates a new working session and returns its handle.
     pub fn create(&self, owner: &Principal) -> Result<String, SessionError> {
         self.purge_idle();
         let mut entries = self.entries();
@@ -85,7 +85,7 @@ impl Sessions {
         Ok(handle)
     }
 
-    /// `owner` のハンドル `handle` の実行器。
+    /// The executor of `owner`'s handle `handle`.
     pub fn get(&self, handle: &str, owner: &Principal) -> Result<Arc<EngineHost>, SessionError> {
         let mut entries = self.entries();
         let entry = entries.get_mut(handle).filter(|e| &e.owner == owner).ok_or(SessionError::Unknown)?;
@@ -93,7 +93,7 @@ impl Sessions {
         Ok(entry.host.clone())
     }
 
-    /// 作業セッションを破棄する。実行中の要求が終わると実行スレッドも終わる。
+    /// Discards a working session. Its execution thread ends once the requests in progress finish.
     pub fn close(&self, handle: &str, owner: &Principal) -> Result<(), SessionError> {
         let mut entries = self.entries();
         if !entries.get(handle).is_some_and(|e| &e.owner == owner) {
@@ -103,7 +103,7 @@ impl Sessions {
         Ok(())
     }
 
-    /// 使われないまま期限を過ぎた作業セッションを破棄し、その数を返す。
+    /// Discards the working sessions left unused past the idle time and returns how many.
     pub fn purge_idle(&self) -> usize {
         let mut entries = self.entries();
         let before = entries.len();

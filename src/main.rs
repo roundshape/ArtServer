@@ -38,7 +38,7 @@ async fn main() -> ExitCode {
     }
 }
 
-/// Ctrl+C（Unix では SIGTERM も）で終了する。
+/// Shuts down on Ctrl+C (and on SIGTERM on Unix).
 async fn shutdown_signal() {
     let ctrl_c = async {
         if let Err(e) = tokio::signal::ctrl_c().await {

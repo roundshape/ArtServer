@@ -1,292 +1,292 @@
-# ArtServer アーキテクチャ調査・方式決定（Phase 0）
+# ArtServer Architecture Investigation and Approach Decision (Phase 0)
 
-- 作成日: 2026-10-17
-- ステータス: **案A-2の採用が決定（2026-10-17 ユーザー承認）**。本書はPhase 0時点の調査記録。以降の設計方針は `docs/design-policy.md` を正とする（MCP最新仕様への対応でセッションの扱いなどが変わっている）。
-- 調査対象: VectorCraft `~/MyTasks/RoundShape/vectorcraft`
+- Created: 2026-10-17
+- Status: **Option A-2 adopted (approved by the project owner on 2026-10-17)**. This document is the investigation record as of Phase 0. From here on, `docs/design-policy.md` is authoritative for the design policy (session handling and other points changed to follow the latest MCP specification).
+- Subject: VectorCraft `~/MyTasks/RoundShape/vectorcraft`
   - origin: https://github.com/storytold/vectorcraft.git
-  - commit: `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c`（2026-10-17、v0.12.0 + 335 commits）
-- 調査方法: ソースの静的読解のみ。ビルド・テストは未実施（後述の通り開発機にRust未導入）。
-- 信頼性の優先順位: コード → コメント → 関数名。以下の `path:line` は VectorCraft リポジトリ内の位置。
+  - commit: `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c` (2026-10-17, v0.12.0 + 335 commits)
+- Method: static reading of the source only. No build or test was run (Rust is not installed on the development machine, as noted below).
+- Reliability order: code → comments → function names. Each `path:line` below is a location in the VectorCraft repository.
 
 ---
 
-## 1. 結論（要約）
+## 1. Conclusion (Summary)
 
-**案A（VectorCraftのcrateをライブラリとして参照）を採用し、そのうち「`vectorcraft-engine` を直接組み込み、MCP層はArtServer側で設計する」形（案A-2）を推奨する。**
+**Adopt Option A (use the VectorCraft crates as libraries), and within it, recommend the form "embed `vectorcraft-engine` directly and design the MCP layer on the ArtServer side" (Option A-2).**
 
-- エンジン層（L0〜L5）はGUIに依存せず、描画もCPUのみ（`vello_cpu`）。サーバーへの組み込みに構造上の障害はない。
-- エンジンは「コマンドID + JSON引数」で全機能を呼べる（`Session::execute`）。MCPツールへの対応付けが容易。
-- 既存の `vectorcraft-mcp` は **stdio・単一ユーザー・信頼された手元利用** を前提とした作りで、ネットワーク公開・複数セッションには前提が合わない。参考実装として扱い、依存はしない。
-- 一方、**エンジンにはプロセス全体で共有される可変状態がある**（カラー設定、フォントDB、プラグイン登録など）。MVPでは「その状態を変えるコマンドを許可しない」ことで対処し、将来はプロセス分離に移行できる構造にしておく。
+- The engine layers (L0–L5) do not depend on the GUI, and rendering is CPU-only (`vello_cpu`). There is no structural obstacle to embedding it in a server.
+- Every engine feature can be called with "command ID + JSON arguments" (`Session::execute`). Mapping it to MCP tools is easy.
+- The existing `vectorcraft-mcp` is built for **stdio, a single user, and trusted local use**, and its assumptions do not fit network exposure or multiple sessions. Treat it as a reference implementation and do not depend on it.
+- On the other hand, **the engine has mutable state shared across the whole process** (color settings, font DB, plugin registration, etc.). The MVP handles this by "not allowing commands that change that state", and keeps a structure that can move to process isolation in the future.
 
 ---
 
-## 2. 調査結果
+## 2. Findings
 
-### 2.1 crate構成とGUI依存
+### 2.1 Crate structure and GUI dependencies
 
-VectorCraft自身が層構造を定義し、`cargo xtask layers` で検査している（`docs/architecture.md:15-31`、`xtask/src/layers.rs`）。
+VectorCraft itself defines a layer structure and checks it with `cargo xtask layers` (`docs/architecture.md:15-31`, `xtask/src/layers.rs`).
 
-| 層 | crate | ArtServerでの扱い |
+| Layer | crate | Use in ArtServer |
 |---|---|---|
-| L0 | `geom`, `color`, `affinity` | 間接依存 |
-| L1 | `doc`（文書モデル） | 間接依存 |
-| L2 | `pathops`, `brush`, `trace`, `text`, `effects`, `plugins`, `three-d` | 間接依存 |
-| L3 | `render`, `svg`, `pdf`, `format`, `eps`, `cad`, `metafile` | 間接依存 |
-| L4 | `tools` | 間接依存 |
-| L5 | **`engine`**（セッション・履歴・選択・約700コマンド・ファイルI/O） | **直接依存** |
-| L6 | `ui-egui`（GUI）, `mcp`（stdio MCP） | 使わない（`mcp`は参考実装） |
-| L7 | `apps/vectorcraft`（GUI）, `apps/vectorcraft-cli`, `apps/vectorcraft-web` | 使わない |
+| L0 | `geom`, `color`, `affinity` | Indirect dependency |
+| L1 | `doc` (document model) | Indirect dependency |
+| L2 | `pathops`, `brush`, `trace`, `text`, `effects`, `plugins`, `three-d` | Indirect dependency |
+| L3 | `render`, `svg`, `pdf`, `format`, `eps`, `cad`, `metafile` | Indirect dependency |
+| L4 | `tools` | Indirect dependency |
+| L5 | **`engine`** (session, history, selection, about 700 commands, file I/O) | **Direct dependency** |
+| L6 | `ui-egui` (GUI), `mcp` (stdio MCP) | Not used (`mcp` is a reference implementation) |
+| L7 | `apps/vectorcraft` (GUI), `apps/vectorcraft-cli`, `apps/vectorcraft-web` | Not used |
 
-- **L6未満はUI系crate（egui/eframe/winit/rfd/craft-ui）への依存禁止**（`AGENTS.md:45`）。
-- **L0〜L5はwasm32でビルドできることが必須**（`AGENTS.md:47`）。このためOSネイティブ依存がほぼない。
-- `engine` / `mcp` / `vectorcraft-cli` の依存グラフにGUI系crateは含まれない（各 `Cargo.toml` で確認）。
-- 規模: 全体約55万行。`engine` 約14.5万行、`ui-egui` 約11.8万行。
+- **Layers below L6 must not depend on UI crates (egui/eframe/winit/rfd/craft-ui)** (`AGENTS.md:45`).
+- **L0–L5 must build for wasm32** (`AGENTS.md:47`). Because of this, there are almost no OS-native dependencies.
+- The dependency graphs of `engine` / `mcp` / `vectorcraft-cli` contain no GUI crates (checked in each `Cargo.toml`).
+- Size: about 550,000 lines in total. `engine` about 145,000 lines, `ui-egui` about 118,000 lines.
 
-### 2.2 エンジンAPI（ヘッドレス利用）
+### 2.2 Engine API (headless use)
 
-- 入口は `Session::execute(&mut self, id: &str, params: &Value) -> Result<Value>`（`crates/engine/src/lib.rs:1521`）。パニックガード付き。
-- `Session` は複数文書を保持できる（`docs: Vec<DocState>`、`lib.rs:1194-1306`）。文書ごとに選択状態・Undo履歴を持つ。
-- MVPで必要な流れはすべてコマンドで完結し、**ファイルシステムを使わずに済む**:
+- The entry point is `Session::execute(&mut self, id: &str, params: &Value) -> Result<Value>` (`crates/engine/src/lib.rs:1521`). It has a panic guard.
+- A `Session` can hold multiple documents (`docs: Vec<DocState>`, `lib.rs:1194-1306`). Each document has its own selection state and Undo history.
+- The whole flow the MVP needs can be done with commands alone, **without using the file system**:
 
 ```text
 file.new          {width, height, ...}                → {index, previewMode}   cmd/edit.rs:17
 shape.rectangle   {x, y, width, height, radius?}      → {id}                   cmd/create.rs:13
 paint.setFill     {color, ids}                                                 cmd/paint.rs:15
 document.export   {format: "svg"|"pdf"|"png", ...}    → {dataBase64, ...}      cmd/fileio/mod.rs:121
-                  （path 省略時はファイルに書かず Base64 で返す）
+                  (if path is omitted, it returns Base64 instead of writing a file)
 ```
 
-- 注意: 引数の未知キー検査（`check_params`）は `Session::execute` 内では `#[cfg(test)]` のときしか動かない（`lib.rs:1523-1526`）。組み込む側で明示的に呼ぶ必要がある（`vectorcraft-mcp` も `crates/mcp/src/headless.rs:128-134` で呼んでいる）。
-- 引数仕様（`params`）はJSON Schemaではなく説明文字列。MCPツールの入力スキーマはArtServer側で定義する必要がある。
+- Note: the unknown-key check for arguments (`check_params`) runs inside `Session::execute` only under `#[cfg(test)]` (`lib.rs:1523-1526`). The embedding side must call it explicitly (`vectorcraft-mcp` also calls it in `crates/mcp/src/headless.rs:128-134`).
+- The argument spec (`params`) is a description string, not a JSON Schema. The input schemas for MCP tools must be defined on the ArtServer side.
 
-### 2.3 既存MCP（`crates/mcp`）
+### 2.3 Existing MCP (`crates/mcp`)
 
-| 項目 | 内容 | 根拠 |
+| Item | Details | Evidence |
 |---|---|---|
-| 通信方式 | **stdioのみ**。HTTP/SSE/Streamable HTTPは未実装 | `crates/mcp/Cargo.toml:6`、`docs/mcp.md:275` |
-| JSON-RPC | 手書き実装（`serde_json::Value`）。MCP SDK不使用 | `crates/mcp/src/server.rs` |
-| 対応プロトコル | 2026-07-28 / 2025-06-18（既定）/ 2025-03-26 / 2024-11-05 | `server.rs:21-23` |
-| 通信層と処理の分離 | `Server::handle(&mut self, msg: Value) -> Option<Value>` で分離済み | `server.rs:362` |
-| `Server` の Send | **Sendではない**（`Box<dyn Backend>` にSend境界なし） | `server.rs:90-100`、`backend.rs:11-18` |
-| ツール数 | 32個。うち `command_run` / `command_batch` 等で**エンジンの全コマンド（約700）を実行可能** | `crates/mcp/src/tools.rs:113-495` |
-| 2つのモード | Headless（プロセス内でSessionを持つ）／Remote（起動中GUIアプリへTCP接続、**認証なし**） | `headless.rs`、`backend.rs:20-67`、`docs/control-protocol.md` |
-| ログ | ログレベルとキューがプロセス全体で共有。複数セッションだと他セッションに漏れる | `crates/mcp/src/logging.rs:22-28` |
-| 不足点 | `handle()` 経由では、初期化前の呼び出し拒否・サイズ上限・キャンセル・進捗通知が効かない（`serve()` 内にしかない） | `server.rs:269-328, 403-459`、`intake.rs` |
-| 名称 | `serverInfo.name` が `"vectorcraft"`、ツール説明もVectorCraft前提 | `server.rs:421` |
+| Transport | **stdio only**. HTTP/SSE/Streamable HTTP are not implemented | `crates/mcp/Cargo.toml:6`, `docs/mcp.md:275` |
+| JSON-RPC | Hand-written implementation (`serde_json::Value`). Does not use an MCP SDK | `crates/mcp/src/server.rs` |
+| Supported protocols | 2026-07-28 / 2025-06-18 (default) / 2025-03-26 / 2024-11-05 | `server.rs:21-23` |
+| Separation of transport and processing | Already separated by `Server::handle(&mut self, msg: Value) -> Option<Value>` | `server.rs:362` |
+| Send for `Server` | **Not Send** (`Box<dyn Backend>` has no Send bound) | `server.rs:90-100`, `backend.rs:11-18` |
+| Number of tools | 32. Of these, `command_run` / `command_batch` etc. **can run every engine command (about 700)** | `crates/mcp/src/tools.rs:113-495` |
+| Two modes | Headless (holds a Session in the process) / Remote (TCP connection to a running GUI app, **no authentication**) | `headless.rs`, `backend.rs:20-67`, `docs/control-protocol.md` |
+| Logging | The log level and queue are shared across the whole process. With multiple sessions, logs leak to other sessions | `crates/mcp/src/logging.rs:22-28` |
+| Gaps | Through `handle()`, rejecting calls before initialization, size limits, cancellation and progress notifications do not work (they exist only inside `serve()`) | `server.rs:269-328, 403-459`, `intake.rs` |
+| Name | `serverInfo.name` is `"vectorcraft"`, and the tool descriptions also assume VectorCraft | `server.rs:421` |
 
-- シェル実行・外部プロセス起動・URL取得は**エンジン側に存在しない**（grepで確認済み）。
-- プラグインはwasmiによるWebAssemblyサンドボックス（メモリ512MiB、60秒など上限あり、`crates/plugins/src/runtime.rs:37-48`）。ただし登録はプロセス全体で共有。
+- Shell execution, launching external processes and fetching URLs **do not exist in the engine** (confirmed with grep).
+- Plugins run in a WebAssembly sandbox using wasmi (with limits such as 512MiB of memory and 60 seconds, `crates/plugins/src/runtime.rs:37-48`). However, registration is shared across the whole process.
 
-### 2.4 ファイルアクセス制限（`crates/engine/src/file_access.rs`）
+### 2.4 File access restrictions (`crates/engine/src/file_access.rs`)
 
-- `AutomationRoots { read, write }`。指定したルートは正規化され、実在するディレクトリである必要がある。
-- **ルート未指定なら無制限**（`file_access.rs:16-20`）。
-- 検査内容: 絶対パス化 → シンボリックリンク解決 → ルート配下かを**パス要素単位**で比較（`/work2` は `/work` の配下と見なさない）。存在しないフォルダより下の `..` や、行き先のないリンクは拒否。
-- **適用範囲はスレッド単位**（`thread_local!`、`file_access.rs:119-122`）か、プロセス全体に一度だけ（`confine_process`、`file_access.rs:125-131`）。
-  - `docs/mcp.md:101` は「サーバープロセスの全スレッドで有効」と書いているが、これはCLIが `confine_process` を呼ぶ場合だけ。ライブラリとして使う場合はスレッド単位になる。
-- 既知の弱点:
-  - **TOCTOU**（検査してから開くまでの間にリンクを差し替えられると突破される）。コード内コメントで認めている（`file_access.rs:22-24`）。
-  - 相対パスは**サーバープロセスのカレントディレクトリ基準**で解決される。
-  - エラーメッセージにホストの絶対パスが含まれる。
-  - 制限を通らない経路がある: アプリ用フォルダ（スウォッチライブラリ、Fontsフォルダ）、データ復旧（`recovery.rs`）、テンプレートフォルダの作成（`save.rs:130-137`）、リンク画像の更新日時取得（`link_watch.rs`）、エンジン外のスレッドでの呼び出し。
-- 入力の上限: ファイル読み込みに上限なし、PDFリーダーの `max_input_bytes` が `usize::MAX`、Undo履歴は**文書ごとに最大1GiB**、ヘッドレス時は**呼び出しごとの実行時間制限なし**（協調的キャンセルのみ）。
+- `AutomationRoots { read, write }`. The given roots are normalized and must be existing directories.
+- **If no root is given, access is unrestricted** (`file_access.rs:16-20`).
+- What is checked: make the path absolute → resolve symbolic links → compare **per path component** whether it is under a root (`/work2` is not treated as under `/work`). `..` below a folder that does not exist, and links with no target, are rejected.
+- **The scope is per thread** (`thread_local!`, `file_access.rs:119-122`), or once for the whole process (`confine_process`, `file_access.rs:125-131`).
+  - `docs/mcp.md:101` says "effective on all threads of the server process", but this is only when the CLI calls `confine_process`. When used as a library, it is per thread.
+- Known weaknesses:
+  - **TOCTOU** (if a link is swapped between the check and the open, the restriction is bypassed). A comment in the code admits this (`file_access.rs:22-24`).
+  - Relative paths are resolved **against the current directory of the server process**.
+  - Error messages contain absolute host paths.
+  - Some paths bypass the restriction: app folders (swatch libraries, the Fonts folder), data recovery (`recovery.rs`), creating the template folder (`save.rs:130-137`), getting modification times of linked images (`link_watch.rs`), and calls from threads outside the engine.
+- Input limits: no limit on file import, the PDF reader's `max_input_bytes` is `usize::MAX`, Undo history is **up to 1GiB per document**, and in headless mode there is **no execution time limit per call** (cooperative cancellation only).
 
-### 2.5 同時実行・セッション分離
+### 2.5 Concurrency and session isolation
 
-- `Session` は **Send**（`crates/engine/src/tests_large_edits.rs:66-75` でスレッド間移動している）。Syncではない見込み。
-- `Document` は Send + Sync（`Arc<Document>` をワーカースレッドに渡している）。
-- 実行はすべて同期的なCPU処理。非同期サーバーからはブロッキングスレッドで実行する必要がある。
-- キャンセル（`cancel::scope`）とファイル制限（`file_access::confine`）はスレッドローカル。進捗通知の `ProgressSink` は `Rc`（`crates/doc/src/cancel.rs:51`）。**実行スレッド内で生成・適用する必要がある**。
-- **プロセス全体で共有される可変状態**（セッション間で漏れる）:
+- `Session` is **Send** (`crates/engine/src/tests_large_edits.rs:66-75` moves it between threads). It is probably not Sync.
+- `Document` is Send + Sync (`Arc<Document>` is passed to worker threads).
+- All execution is synchronous CPU work. An async server must run it on blocking threads.
+- Cancellation (`cancel::scope`) and file restrictions (`file_access::confine`) are thread-local. The `ProgressSink` for progress notifications is an `Rc` (`crates/doc/src/cancel.rs:51`). **They must be created and applied inside the execution thread**.
+- **Mutable state shared across the whole process** (leaks between sessions):
 
-| 状態 | 場所 | 変更するコマンド |
+| State | Location | Commands that change it |
 |---|---|---|
-| カラーマネジメント設定 | `crates/color/src/cms/mod.rs:890-924` | `edit.colorSettings`, `edit.assignProfile` |
-| ICCプロファイル登録 | `cms/mod.rs:167` | `color.loadProfile`, ネイティブ形式を開いたとき |
-| フォントDB（単一の `FontDb::global()`） | `crates/text/src/fontdb.rs:1545-1548` | `text.rescanFonts`, 設定のフォントフォルダ |
-| ハイフネーション例外 | `crates/text/src/hyphen.rs:34-60` | `prefs.set` |
-| 描画スレッド数の既定値 | `crates/render/src/lib.rs:2193-2220` | `prefs.set` のたびにリセット |
-| WebAssemblyプラグイン登録 | `crates/plugins/src/registry.rs:14` | `plugin.install` 等 |
-| プロセス全体のファイル制限ルート | `file_access.rs:124-131` | `confine_process`（一度だけ） |
+| Color management settings | `crates/color/src/cms/mod.rs:890-924` | `edit.colorSettings`, `edit.assignProfile` |
+| ICC profile registration | `cms/mod.rs:167` | `color.loadProfile`, when opening a native-format file |
+| Font DB (a single `FontDb::global()`) | `crates/text/src/fontdb.rs:1545-1548` | `text.rescanFonts`, font folders in settings |
+| Hyphenation exceptions | `crates/text/src/hyphen.rs:34-60` | `prefs.set` |
+| Default render thread count | `crates/render/src/lib.rs:2193-2220` | Reset on every `prefs.set` |
+| WebAssembly plugin registration | `crates/plugins/src/registry.rs:14` | `plugin.install` etc. |
+| Process-wide file restriction roots | `file_access.rs:124-131` | `confine_process` (once only) |
 
-- 内容をキーにした共有キャッシュ（画像1GiB、配置文書512MiB等）はデータ混在はしないが、メモリはテナント間で共有される。
-- エクスポートのたびに新しい `Renderer` が作られ、各々最大8スレッドを使う。`VECTORCRAFT_RENDER_THREADS` で抑制できる。
-- スタックオーバーフローとメモリ不足はプロセスごと落ちる（パニックガードでは防げない）。
+- Content-keyed shared caches (1GiB for images, 512MiB for placed documents, etc.) do not mix data, but memory is shared between tenants.
+- Each export creates a new `Renderer`, and each one uses up to 8 threads. This can be limited with `VECTORCRAFT_RENDER_THREADS`.
+- Stack overflow and out-of-memory bring down the whole process (the panic guard cannot prevent this).
 
-### 2.6 フォント
+### 2.6 Fonts
 
-- 同梱フォントは**ラテン文字のみ**（Source Sans 3 / Source Serif 4 / Inter / JetBrains Mono、OFL-1.1、約3.2MiB）。
-- **日本語フォントは同梱されない**。ビルド時に `CRAFT_FONTS_DIR` を指定すると BIZ UDPGothic / Shippori Mincho / BIZ UDMincho 等を埋め込める（`docs/development.md:115-152`）。それ以外はサーバーにインストールされたフォント頼み。
-- Linuxでは `/usr/share/fonts`、XDG、fontconfig設定を純Rustで走査する（libfontconfig不要）。
-- フォントDBはプロセスで1つ。セッションごとのフォント分離はできない。
-- `vectorcraft-mcp` に依存すると、Cargoのfeature統合により同梱フォントが強制的に有効になる（`crates/mcp/Cargo.toml:11`、`crates/engine/Cargo.toml:11-15`）。`docs/development.md:164` の記述と矛盾。
+- The bundled fonts are **Latin only** (Source Sans 3 / Source Serif 4 / Inter / JetBrains Mono, OFL-1.1, about 3.2MiB).
+- **CJK fonts (such as Japanese) are not bundled**. Setting `CRAFT_FONTS_DIR` at build time lets you embed BIZ UDPGothic / Shippori Mincho / BIZ UDMincho etc. (`docs/development.md:115-152`). Otherwise it relies on fonts installed on the server.
+- On Linux, it scans `/usr/share/fonts`, XDG and fontconfig settings in pure Rust (no libfontconfig needed).
+- There is one font DB per process. Fonts cannot be isolated per session.
+- Depending on `vectorcraft-mcp` forces the bundled fonts on through Cargo feature unification (`crates/mcp/Cargo.toml:11`, `crates/engine/Cargo.toml:11-15`). This contradicts `docs/development.md:164`.
 
-### 2.7 ビルド・環境
+### 2.7 Build and environment
 
-- 必要: **Rust 1.95以上、edition 2024**（`Cargo.toml:8-10`）。`rust-toolchain` ファイルはない。
-- **開発機（このMac）にRustが未導入**（`cargo` / `rustc` / `~/.rustup` なし）。
-- 非GUI部分の依存は純Rust。システムライブラリはリンカ（macOSはXcode Command Line Tools）だけで足りる見込み。
-- ビルドには crates.io と `github.com/storytold/craft-libs`（git依存）へのネットワーク接続が必要。
-- ディスク: ワークスペース全体で約30GB/ターゲット（`AGENTS.md:58`）。ArtServerはエンジンのみなので数GBの見込み（未検証）。
-- リポジトリ内にLinux/macOSの一般的なビルド・テストCIはない。品質ゲートはローカルの `cargo xtask ci`。
+- Requires: **Rust 1.95 or later, edition 2024** (`Cargo.toml:8-10`). There is no `rust-toolchain` file.
+- **Rust is not installed on the development machine (this Mac)** (no `cargo` / `rustc` / `~/.rustup`).
+- The dependencies of the non-GUI parts are pure Rust. For system libraries, the linker alone (Xcode Command Line Tools on macOS) should be enough.
+- Building needs network access to crates.io and `github.com/storytold/craft-libs` (git dependency).
+- Disk: about 30GB per target for the whole workspace (`AGENTS.md:58`). ArtServer uses only the engine, so a few GB is expected (not yet verified).
+- The repository has no general build/test CI for Linux/macOS. The quality gate is the local `cargo xtask ci`.
 
-### 2.8 upstream追従
+### 2.8 Following upstream
 
-- VectorCraftのcrateは**crates.ioに公開されていない**（git依存のcraft-pdf、crate外を参照する `include_bytes!` があるため公開不可）。
-- バージョンは 0.1.1（2026-10-03）→ 0.12.0（2026-10-16）とほぼ毎日上がっており、1日200〜560コミット。**公開APIの安定性・semverの約束はない**。
-- 依存側に**引き継がれないもの**:
-  - `[patch.crates-io]`（`Cargo.toml:126-130`、krilla / hayro-* を craft-libs に差し替え）
-  - `[profile.*]`（依存crateを opt-level 2 にする設定を含む）
-  - workspaceのlint設定、`Cargo.lock`
-- `[patch.crates-io]` を写さないと、PDFバックエンドがcrates.io版になり、VectorCraftが入れているパニック対策・デコード制限が失われる。ビルド自体が失敗する可能性もある（未検証）。
+- The VectorCraft crates are **not published on crates.io** (they cannot be published because of the git dependency craft-pdf and `include_bytes!` that refers outside the crate).
+- The version has gone up almost every day, from 0.1.1 (2026-10-03) → 0.12.0 (2026-10-16), with 200–560 commits per day. **There is no promise of public API stability or semver**.
+- **Not inherited** by dependents:
+  - `[patch.crates-io]` (`Cargo.toml:126-130`, replaces krilla / hayro-* with craft-libs)
+  - `[profile.*]` (including the setting that builds dependency crates at opt-level 2)
+  - The workspace lint settings, `Cargo.lock`
+- Without copying `[patch.crates-io]`, the PDF backend becomes the crates.io version, and the panic protections and decode limits that VectorCraft adds are lost. The build itself may also fail (not yet verified).
 
-### 2.9 ライセンス・ブランド
+### 2.9 License and brand
 
-- VectorCraft本体と craft-libs は **MIT OR Apache-2.0**。
-- ArtServerに入る依存の中に **GPL / LGPL / MPL / プロプライエタリはない**（Cargo.lockからの静的解析。`cargo deny` による確定は未実施）。
-- 配布時に必要な表示:
-  - VectorCraftのMIT表示（`Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors`）
-  - craft-libs、Hayro AuthorsのMIT表示（`licenses/pdf-backend/*`）
-  - Adobe CMap、Foxit/PDFiumフォント（PDFリーダーに埋め込まれる）のBSD-3表示
-  - 同梱フォントのOFL-1.1全文4種（`assets/fonts/OFL-*.txt`）
-  - jpeg-encoderのIJG文言、Unicode-3.0（ICU4X）、BSD/Zlib系の表示
-- ブランド:
-  - **ArtCraftの名称・ロゴはオープンソースではない**（`docs/brand/LICENSE-brand.txt`）。派生物では使用不可。「based on VectorCraft by the ArtCraft team」とテキストで記すことだけは許可。
-  - エンジン内に `help.*` コマンドとしてArtCraftのサイト・Discordへのリンクがある（`crates/engine/src/cmd/help.rs:8-27`）。ArtServerでは公開しない。
-  - VectorCraftの名前が出力に書き込まれる: PDFの Creator/Producer（`crates/pdf/src/export.rs:274-275`）など。ライセンス上の義務ではなく、ブランド上の検討事項。
+- VectorCraft itself and craft-libs are **MIT OR Apache-2.0**.
+- Among the dependencies that go into ArtServer, there is **no GPL / LGPL / MPL / proprietary** code (static analysis of Cargo.lock; not yet confirmed with `cargo deny`).
+- Notices required for distribution:
+  - VectorCraft's MIT notice (`Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors`)
+  - MIT notices for craft-libs and the Hayro Authors (`licenses/pdf-backend/*`)
+  - BSD-3 notices for Adobe CMap and the Foxit/PDFium fonts (embedded in the PDF reader)
+  - The full OFL-1.1 texts for the 4 bundled fonts (`assets/fonts/OFL-*.txt`)
+  - The IJG wording for jpeg-encoder, Unicode-3.0 (ICU4X), and BSD/Zlib-style notices
+- Brand:
+  - **The ArtCraft name and logo are not open source** (`docs/brand/LICENSE-brand.txt`). They may not be used in derivative works. Only stating "based on VectorCraft by the ArtCraft team" in text is allowed.
+  - The engine has links to the ArtCraft site and Discord as `help.*` commands (`crates/engine/src/cmd/help.rs:8-27`). ArtServer does not expose them.
+  - The VectorCraft name is written into output: the PDF Creator/Producer (`crates/pdf/src/export.rs:274-275`), etc. This is not a license obligation but a brand question.
 
 ---
 
-## 3. 実装案の比較
+## 3. Comparison of implementation options
 
-| 観点 | A-1: `vectorcraft-mcp` を組み込みHTTP層だけ自作 | **A-2: `vectorcraft-engine` を組み込みMCP層を自作（推奨）** | B: CLI(stdio)をHTTPゲートウェイで中継 | C: ソースをコピー |
+| Aspect | A-1: Embed `vectorcraft-mcp` and write only the HTTP layer | **A-2: Embed `vectorcraft-engine` and write the MCP layer (recommended)** | B: Relay the CLI (stdio) through an HTTP gateway | C: Copy the source |
 |---|---|---|---|---|
-| 初期の機能量 | ◎ 32ツール・約700コマンドがすぐ使える | ○ 必要なツールから順に追加 | ◎ 同左 | ◎ |
-| 安全性の制御 | △ 全コマンド公開が前提。拒否リストを後付けする形になる | ◎ 許可リスト方式（既定で拒否）にできる | △ CLIの既定動作（7979番への自動接続など）に注意が必要 | ○ |
-| 複数セッション | △ `Server` 非Send・ログ共有・ライフサイクル検査なし | ○ セッションごとの実行スレッドで管理 | ◎ プロセス分離できる | ○ |
-| 時間・メモリ制限 | △ 協調キャンセルのみ | △ 同左（将来プロセス分離で解決） | ◎ プロセスを強制終了できる | △ |
-| Streamable HTTP対応 | △ 進捗・キャンセルは `serve()` 内にしかなく、作り直しが要る | ○ 最初から設計できる | △ stdio↔HTTPの変換とプロセス管理が必要 | ○ |
-| ブランド分離 | △ `serverInfo`・ツール説明がVectorCraft | ◎ ArtServer独自 | △ | ◎ |
-| upstream追従 | ○ rev更新 | ○ rev更新 | ◎ バイナリ差し替え | ✕ 約55万行・毎日更新の手動追従は非現実的 |
-| 実装量 | 小 | 中 | 中 | 大 |
+| Initial features | ◎ 32 tools and about 700 commands usable right away | ○ Add tools one by one, starting with those needed | ◎ Same as left | ◎ |
+| Safety control | △ Assumes all commands are exposed. A denylist has to be added afterwards | ◎ Can use an allowlist (deny by default) | △ Needs care with the CLI's default behavior (such as auto-connecting to port 7979) | ○ |
+| Multiple sessions | △ `Server` is not Send, logging is shared, no lifecycle checks | ○ Managed with an execution thread per session | ◎ Process isolation is possible | ○ |
+| Time and memory limits | △ Cooperative cancellation only | △ Same as left (solved later by process isolation) | ◎ The process can be killed | △ |
+| Streamable HTTP support | △ Progress and cancellation exist only inside `serve()`, so they must be rebuilt | ○ Can be designed from the start | △ Needs stdio↔HTTP conversion and process management | ○ |
+| Brand separation | △ `serverInfo` and tool descriptions are VectorCraft | ◎ ArtServer's own | △ | ◎ |
+| Following upstream | ○ Update the rev | ○ Update the rev | ◎ Replace the binary | ✕ Following about 550,000 lines updated daily by hand is unrealistic |
+| Amount of implementation | Small | Medium | Medium | Large |
 
-**A-2を推奨する理由**
+**Why A-2 is recommended**
 
-1. VectorCraftの価値の中心はエンジン（L0〜L5）であり、A-2でもそれを丸ごと再利用できる。MCP層はエンジン全体に比べればごく薄い。
-2. `vectorcraft-mcp` は信頼された単一ユーザーのstdio利用を前提に作られている。ネットワーク公開に必要な部分（許可リスト、セッション分離、ライフサイクル、サイズ制限、Streamable HTTPの進捗・キャンセル）は、A-1でもほぼ作り直しになる。
-3. 計画書の「暫定コードの常態化を避ける」に照らすと、前提の合わない部品にラッパーを重ねるより、最初から責務を分けた方が保守しやすい。
+1. The core value of VectorCraft is the engine (L0–L5), and A-2 also reuses all of it. The MCP layer is very thin compared with the whole engine.
+2. `vectorcraft-mcp` is built for stdio use by a single trusted user. The parts needed for network exposure (allowlist, session isolation, lifecycle, size limits, Streamable HTTP progress and cancellation) would be almost entirely rebuilt even with A-1.
+3. In light of the development plan's "avoid temporary code becoming permanent", separating responsibilities from the start is easier to maintain than stacking wrappers on parts whose assumptions do not fit.
 
-**案Bを採らない理由**: プロセス分離は大きな利点だが、CLIはそもそもサーバー用途向けではなく、セッション管理・エラー伝搬・性能の管理が難しい。プロセス分離はPhase 3で「ArtServer自身のワーカープロセス」として導入する（4.4節）。
+**Why not Option B**: process isolation is a big advantage, but the CLI is not meant for server use in the first place, and session management, error propagation and performance are hard to manage. Process isolation will be introduced in Phase 3 as "ArtServer's own worker processes" (section 4.4).
 
-**案Cを採らない理由**: 規模と更新頻度から、手動での追従が現実的でない。
+**Why not Option C**: given the size and update frequency, following it by hand is not realistic.
 
 ---
 
-## 4. 推奨アーキテクチャ（案A-2）
+## 4. Recommended architecture (Option A-2)
 
-### 4.1 全体構成
+### 4.1 Overall structure
 
 ```text
-MCPクライアント（Claude Code 等）
-        │  HTTP(S) + MCP Streamable HTTP   ※TLSはリバースプロキシで終端
+MCP client (Claude Code, etc.)
+        │  HTTP(S) + MCP Streamable HTTP   * TLS is terminated at a reverse proxy
         ▼
-┌─────────────────────────── artserver（単一バイナリ） ───────────────────────────┐
-│ HTTP層           : 127.0.0.1バインド / Origin・Host検査 / 本文サイズ上限 / 同時接続上限   │
-│ 認証層           : Bearerトークン（定数時間比較）                                    │
-│ MCP層            : JSON-RPC / initialize・ライフサイクル / tools・resources            │
-│                    ツール定義と入力スキーマはArtServer独自                             │
-│ ポリシー層       : 許可するエンジンコマンドの許可リスト（既定で拒否）                    │
-│                    command.batch 等の入れ子も検査 / 引数検査（check_params）           │
-│ セッション管理   : MCPセッションID ↔ セッション実行器 / 上限数 / アイドル破棄            │
-│ セッション実行器 : セッションごとの専用スレッドが Session を所有                         │
-│                    呼び出しごとに file_access::confine + cancel::scope を適用          │
-│                    （将来、同じインターフェースのままワーカープロセスに差し替え可能）      │
-└───────────────────────────────────────────┬─────────────────────────────────┘
+┌────────────────────────────────────── artserver (single binary) ───────────────────────────────────────┐
+│ HTTP layer       : bind 127.0.0.1 / Origin/Host checks / body size limit / concurrent connection limit │
+│ Auth layer       : Bearer token (constant-time comparison)                                             │
+│ MCP layer        : JSON-RPC / initialize and lifecycle / tools and resources                           │
+│                    tool definitions and input schemas are ArtServer's own                              │
+│ Policy layer     : allowlist of permitted engine commands (deny by default)                            │
+│                    also checks nesting such as command.batch / argument check (check_params)           │
+│ Session manager  : MCP session ID ↔ session executor / max count / idle disposal                       │
+│ Session executor : a dedicated thread per session owns the Session                                     │
+│                    applies file_access::confine + cancel::scope on each call                           │
+│                    (can later be swapped for a worker process with the same interface)                 │
+└───────────────────────────────────────────┬────────────────────────────────────────────────────────────┘
                                             ▼
-                          vectorcraft-engine（git依存・rev固定）
+                          vectorcraft-engine (git dependency, pinned rev)
                           doc / render / svg / pdf / text / format ...
 ```
 
-### 4.2 責務の分け方
+### 4.2 Division of responsibilities
 
-| モジュール | 責務 |
+| Module | Responsibility |
 |---|---|
-| `config` | 設定（バインド先、トークン、データディレクトリ、各種上限）。CLI引数・環境変数から読む |
-| `http` | HTTPサーバー、`/mcp`、`/healthz`。Origin/Host検査、サイズ上限 |
-| `auth` | トークン検証 |
-| `mcp` | MCPプロトコル処理（initialize、tools/list、tools/call、エラー変換） |
-| `tools` | ArtServerのツール定義。ツール → エンジンコマンド列への変換 |
-| `policy` | 許可するコマンドIDと引数の検査。ファイルパス引数の扱い |
-| `session` | セッション表、上限、アイドル破棄、実行器への受け渡し |
-| `engine_host` | 専用スレッドでの `Session` 所有、confine/cancel の適用、パニック・タイムアウトの扱い |
+| `config` | Settings (bind address, token, data directory, various limits). Read from CLI arguments and environment variables |
+| `http` | HTTP server, `/mcp`, `/healthz`. Origin/Host checks, size limits |
+| `auth` | Token verification |
+| `mcp` | MCP protocol handling (initialize, tools/list, tools/call, error conversion) |
+| `tools` | ArtServer's tool definitions. Conversion from a tool to a sequence of engine commands |
+| `policy` | Checking allowed command IDs and arguments. Handling of file path arguments |
+| `session` | Session table, limits, idle disposal, handoff to the executor |
+| `engine_host` | Owning the `Session` on a dedicated thread, applying confine/cancel, handling panics and timeouts |
 
-### 4.3 重要な設計判断
+### 4.3 Key design decisions
 
-- **ファイルI/Oを既定で使わない**: MVPでは入力も出力もBase64で受け渡す（`document.export` の path 省略、`document.open` の `dataBase64`）。パス指定の機能を開くときは、セッション専用ディレクトリを read/write ルートとして `confine` し、パスは必ずArtServer側で絶対パスに組み立てる。`confine_process` は使わない。
-- **許可リスト方式**: `run_command` のような汎用実行ツールはMVPでは公開しない。公開する場合も許可リストで制限する。プロセス全体の状態を変えるコマンド（2.5節の表）、`plugin.*`、`prefs.set`、`text.addFontFiles`、`links.findFiles`、`file.list`、`script.check`、`file.recovery.*`、`help.*` は許可しない。
-- **セッションごとの資源上限**: 文書数、Undo履歴のバイト上限（`History::byte_budget`）、1呼び出しの実行時間（協調キャンセル）、描画スレッド数（`VECTORCRAFT_RENDER_THREADS`）。
-- **起動時の準備**: フォントDBを起動時に走査しておく（初回検索で全呼び出しが待たされるのを防ぐ）。ログはArtServer独自のものを使い、`vectorcraft-mcp` の共有ログキューは使わない。
-- **ログ**: トークン・文書内容・ホストの絶対パスを出さない。
+- **No file I/O by default**: in the MVP, both input and output are passed as Base64 (`document.export` with path omitted, `document.open` with `dataBase64`). When features that take paths are opened up, `confine` to a per-session directory as the read/write root, and always build absolute paths on the ArtServer side. Do not use `confine_process`.
+- **Allowlist approach**: general-purpose execution tools such as `run_command` are not exposed in the MVP. If they are exposed, they are still restricted by the allowlist. Commands that change process-wide state (the table in section 2.5), `plugin.*`, `prefs.set`, `text.addFontFiles`, `links.findFiles`, `file.list`, `script.check`, `file.recovery.*` and `help.*` are not allowed.
+- **Per-session resource limits**: number of documents, byte limit on Undo history (`History::byte_budget`), execution time per call (cooperative cancellation), number of render threads (`VECTORCRAFT_RENDER_THREADS`).
+- **Startup preparation**: scan the font DB at startup (so that the first lookup does not make every call wait). Use ArtServer's own logging, not the shared log queue of `vectorcraft-mcp`.
+- **Logging**: do not output tokens, document contents or absolute host paths.
 
-### 4.4 プロセス内実行の限界と将来の分離
+### 4.4 Limits of in-process execution and future isolation
 
-プロセス内で実行する限り、次の3つは完全には防げない。
+As long as execution stays in-process, the following three cannot be fully prevented.
 
-1. 暴走したコマンドの強制停止（協調キャンセルに応じない処理）
-2. スタックオーバーフロー・メモリ不足によるプロセス全体の停止
-3. 共有キャッシュによるメモリのテナント間共有
+1. Forcibly stopping a runaway command (work that does not respond to cooperative cancellation)
+2. The whole process going down from stack overflow or out-of-memory
+3. Memory shared between tenants through shared caches
 
-MVPでは「信頼できる利用者・ローカル利用」を前提とし、これらを**既知の制限として明記**する。Phase 3で複数ユーザーに公開する前に、セッション実行器を「ArtServer自身のワーカープロセス」に置き換える（インターフェースは変えない）。
+The MVP assumes "trusted users and local use", and **states these clearly as known limitations**. Before opening to multiple users in Phase 3, replace the session executor with "ArtServer's own worker processes" (without changing the interface).
 
-### 4.5 依存関係の管理
+### 4.5 Dependency management
 
-- `vectorcraft-engine` を **git依存・commit rev固定**で参照する（ブランチ追従はしない）。
-- VectorCraftの `[patch.crates-io]`（krilla / hayro-syntax / hayro-interpret / hayro-jbig2、rev `ca50d63…`）をArtServerのルート `Cargo.toml` に写す。
-- 依存crateを opt-level 2 にするprofile設定も写す。
-- `Cargo.lock` はVectorCraftのものを起点にする。
-- VectorCraftのrevを上げるときは、patch・lockfileを同期し、テストを通してから行う。PDFバックエンドがpatch版になっているかをCIで検査する（VectorCraftの `xtask/src/pdf_deps.rs` と同等）。
-- 手元でVectorCraftを改変して試す必要が出た場合は、コミットしないローカル設定でパスに差し替える。
+- Reference `vectorcraft-engine` as a **git dependency pinned to a commit rev** (do not follow a branch).
+- Copy VectorCraft's `[patch.crates-io]` (krilla / hayro-syntax / hayro-interpret / hayro-jbig2, rev `ca50d63…`) into ArtServer's root `Cargo.toml`.
+- Also copy the profile setting that builds dependency crates at opt-level 2.
+- Start `Cargo.lock` from VectorCraft's.
+- When bumping the VectorCraft rev, first sync the patch and lockfile and make the tests pass. Check in CI that the PDF backend is the patched version (equivalent to VectorCraft's `xtask/src/pdf_deps.rs`).
+- If you need to try a locally modified VectorCraft, switch to a path dependency through local settings that are not committed.
 
 ---
 
-## 5. MVP（Phase 1）の範囲
+## 5. MVP (Phase 1) scope
 
-| 区分 | 内容 |
+| Area | Details |
 |---|---|
-| 起動 | `artserver` 単一バイナリ。既定 `127.0.0.1`。トークン未設定なら起動しない |
-| エンドポイント | `POST /mcp`（Streamable HTTP）、`GET /healthz` |
-| ツール（最小） | 文書作成、矩形などの図形追加、塗り・線の設定、移動・変形、文書の状態取得、SVG/PDF/PNGの書き出し（Base64）、Undo/Redo |
-| セキュリティ | Bearerトークン、Origin/Host検査、本文サイズ上限、セッション数上限、アイドル破棄、呼び出しタイムアウト（協調キャンセル）、許可リスト |
-| テスト | 矩形作成 → SVG書き出しのE2E。異常系（不正入力、認証失敗、許可外コマンド、サイズ超過、タイムアウト、許可外パス） |
-| 文書 | README（起動、Claude Codeからの接続、curlでのヘルスチェック）、LICENSE（MIT）、THIRD_PARTY_NOTICES、`docs/progress.md` |
+| Startup | `artserver` single binary. Default `127.0.0.1`. Does not start if no token is set |
+| Endpoints | `POST /mcp` (Streamable HTTP), `GET /healthz` |
+| Tools (minimum) | Create a document, add shapes such as rectangles, set fill and stroke, move and transform, get the document state, export SVG/PDF/PNG (Base64), Undo/Redo |
+| Security | Bearer token, Origin/Host checks, body size limit, session count limit, idle disposal, call timeout (cooperative cancellation), allowlist |
+| Tests | E2E of rectangle creation → SVG export. Error cases (invalid input, authentication failure, disallowed command, size exceeded, timeout, disallowed path) |
+| Documents | README (startup, connecting from Claude Code, health check with curl), LICENSE (MIT), THIRD_PARTY_NOTICES, `docs/progress.md` |
 
-MVPで**実装しないもの**（明記する）: TLS（リバースプロキシで終端）、複数ユーザーと認可、プロセス分離、レート制限、ファイルパス指定での入出力、日本語フォントの同梱。
+**Not implemented** in the MVP (stated explicitly): TLS (terminated at a reverse proxy), multiple users and authorization, process isolation, rate limiting, input/output by file path, bundling CJK fonts (such as Japanese).
 
 ---
 
-## 6. 未解決事項・要判断事項
+## 6. Open issues and decisions needed
 
-| # | 内容 | 対応 |
+| # | Issue | Action |
 |---|---|---|
-| 1 | 開発機にRustが未導入（1.95以上が必要） | rustupでの導入可否をユーザーに確認 |
-| 2 | MCPプロトコル層の実装手段（公式Rust SDK `rmcp` 等を使うか、自前で実装するか） | 実装着手時に、各候補の最新版とStreamable HTTP対応状況を確認して決める |
-| 3 | `[patch.crates-io]` なしでビルドが通るか | patchを写す前提なので実害なし。ビルド時に確認 |
-| 4 | 第三者ライセンスの確定 | ArtServer側で `cargo deny` / `cargo about` を実行して確定させる |
-| 5 | 日本語フォントの方針（サーバーへのインストール／`CRAFT_FONTS_DIR` での埋め込み／実行時追加） | Phase 2で決定。印刷用途なら優先度高 |
-| 6 | 出力ファイルに書かれる "VectorCraft"（PDF Producer等）の扱い | 由来の表示として許容するか、エンジン外から上書きできるか検討 |
-| 7 | 「ArtServer」という名称の商標衝突確認 | 公開前に確認（計画書§7） |
-| 8 | upstreamの更新頻度が非常に高く、APIの安定性の約束がない | rev固定とし、更新は計画的に行う |
-| 9 | `Renderer` / ArtServer側のセッション型がSendか | ビルド時にコンパイラで確認 |
+| 1 | Rust is not installed on the development machine (1.95 or later is required) | Ask the project owner whether it can be installed with rustup |
+| 2 | How to implement the MCP protocol layer (use the official Rust SDK `rmcp` etc., or implement it ourselves) | Decide when implementation starts, after checking each candidate's latest version and its Streamable HTTP support |
+| 3 | Whether the build passes without `[patch.crates-io]` | No real impact, since the plan is to copy the patch. Check at build time |
+| 4 | Confirming third-party licenses | Confirm by running `cargo deny` / `cargo about` on the ArtServer side |
+| 5 | Policy for CJK fonts such as Japanese (install on the server / embed with `CRAFT_FONTS_DIR` / add at runtime) | Decide in Phase 2. High priority for print use |
+| 6 | Handling of "VectorCraft" written into output files (PDF Producer, etc.) | Consider whether to accept it as a statement of origin, or whether it can be overwritten from outside the engine |
+| 7 | Checking the name "ArtServer" for trademark conflicts | Check before release (development plan §7) |
+| 8 | Upstream updates very often, and there is no promise of API stability | Pin the rev and update in a planned way |
+| 9 | Whether `Renderer` / ArtServer's session type is Send | Check with the compiler at build time |
 
 ---
 
-## 7. VectorCraft側ドキュメントとコードの不一致（参考）
+## 7. Mismatches between VectorCraft docs and code (for reference)
 
-upstreamへの報告候補。
+Candidates to report upstream.
 
-1. `docs/mcp.md:101`「サーバープロセスの全スレッドで制限が有効」→ ライブラリ利用時はスレッド単位のみ。
-2. `docs/mcp.md:88-91`「ルート外には書き込まない」→ テンプレートフォルダの作成、データ復旧の読み込み等に例外あり。
-3. `docs/development.md:164`「ライブラリcrateが同梱フォントを強制しない」→ `vectorcraft-mcp` 経由で強制される。
-4. `AGENTS.md:20` の `cargo xtask cleanroom` がCIに存在しない。
-5. `vendor/windows-link/VECTORCRAFT-PATCH.md:17`「workspaceに[patch]はない」→ 現在は存在する。
+1. `docs/mcp.md:101` "the restriction is effective on all threads of the server process" → only per thread when used as a library.
+2. `docs/mcp.md:88-91` "does not write outside the roots" → there are exceptions, such as creating the template folder and data recovery import.
+3. `docs/development.md:164` "library crates do not force the bundled fonts" → they are forced through `vectorcraft-mcp`.
+4. `cargo xtask cleanroom` in `AGENTS.md:20` does not exist in CI.
+5. `vendor/windows-link/VECTORCRAFT-PATCH.md:17` "the workspace has no [patch]" → it does exist now.

@@ -1,9 +1,9 @@
-# ArtServer が修正して使う、VectorCraft の vectorcraft-svg のコピー（commit 904f0fe5227bd987d55319e89a38b4b8f046998c、v0.13.1）。
-# 修正の内容と、VectorCraft を更新するときの載せ直しの手順は vendor/README.md を参照。
+# A copy of VectorCraft's vectorcraft-svg that ArtServer patches and uses (commit 904f0fe5227bd987d55319e89a38b4b8f046998c, v0.13.1).
+# For the fix and how to reapply it when updating VectorCraft, see vendor/README.md.
 #
-# 元の Cargo.toml は VectorCraft のワークスペースの設定（workspace = true）を引き継いでいるため、
-# 同じ commit の値を直接書いた。VectorCraft の他の crate は、ArtServer と同じ commit の GitHub を指す。
-# テスト（tests/ と dev-dependencies）は ArtServer のビルドで使わないので含めていない。
+# The original Cargo.toml inherits VectorCraft's workspace settings (workspace = true), so the values of the same
+# commit are written directly. The other VectorCraft crates point to GitHub at the same commit as ArtServer.
+# Tests (tests/ and dev-dependencies) are not included because ArtServer's build doesn't use them.
 [package]
 name = "vectorcraft-svg"
 version = "0.13.1"

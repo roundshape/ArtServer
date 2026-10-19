@@ -1,6 +1,6 @@
-# Windows でビルドが通ることを確かめる。テストは実行しない（docs/progress.md 2026-10-18）
-# private リポジトリでは Windows のマシンは無料枠を Linux の約2倍使うため、push では動かさず、
-# GitHub の Actions の画面（または gh workflow run build-windows.yml）から手動で実行したときだけ動く
+# Checks that ArtServer builds on Windows. Tests are not run (docs/progress.md 2026-10-18)
+# In a private repository, Windows machines use up the free minutes about twice as fast as Linux, so this doesn't run
+# on push; it runs only when started by hand from GitHub's Actions page (or with gh workflow run build-windows.yml)
 name: build-windows
 
 on:
@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# 新しく実行したら、同じブランチの古い実行は止める
+# A new run cancels older runs on the same branch
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -19,11 +19,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Rust を用意する
+      - name: Set up Rust
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-      # 依存のビルド結果を次回に持ち越して、実行時間を短くする
+      # Carry the dependencies' build results over to the next run, to make it shorter
       - uses: Swatinem/rust-cache@v2
-      - name: ビルド
+      - name: Build
         run: cargo build --locked

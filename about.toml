@@ -1,8 +1,8 @@
-# cargo about の設定。THIRD_PARTY_NOTICES.md を生成する（docs/design-policy.md 9章）
-# 生成: cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md
-# LICENSE ファイルを同梱していないクレートの一部は、元のリポジトリから取得するためネットワークが必要
+# cargo about settings. Generates THIRD_PARTY_NOTICES.md (docs/design-policy.md chapter 9)
+# Generate: cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md
+# Some crates ship no LICENSE file and their texts are fetched from the original repositories, so this needs the network
 
-# 「A OR B」のライセンスでは、この並びで先にあるものを採用する
+# For an "A OR B" license, the one earlier in this list is used
 accepted = [
     "MIT",
     "Apache-2.0",
@@ -12,30 +12,30 @@ accepted = [
     "Unicode-3.0",
     "BSL-1.0",
 ]
-# deny.toml の [graph] targets と揃える
+# Keep in line with [graph] targets in deny.toml
 targets = [
     "aarch64-apple-darwin",
     "x86_64-apple-darwin",
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-gnu",
 ]
-# テスト用・ビルド時だけの依存はバイナリに入らない
+# Test-only and build-time dependencies don't go into the binary
 ignore-dev-dependencies = true
 ignore-build-dependencies = true
-# cargo about に組み込みの対処。chrono は MIT と Apache-2.0 を1つのファイルにまとめている
+# cargo about's built-in workaround. chrono puts MIT and Apache-2.0 in one file
 workarounds = ["chrono"]
 
 [jpeg-encoder]
 accepted = ["IJG"]
 
-# ArtServer 自身。フォルダの中の vendor/ にある VectorCraft のライセンスのファイルを、ArtServer のものと数えないよう明示する
+# ArtServer itself. Names its license file explicitly, so that VectorCraft's license files under vendor/ aren't counted as ArtServer's
 [artserver]
 clarify = { license = "MIT", files = [{ path = "LICENSE", license = "MIT", checksum = "3701a8f0da4aaa48c540dfdfa7f0011e823f033f144e3e9ecadc3f4cbd67640e" }] }
 
-# 以下は LICENSE ファイルを同梱していない、または読み取れない形で同梱しているクレートの指定。
-# checksum はファイルの SHA-256。ファイルが変わると生成が失敗するので、確認して更新する
+# Below: crates that ship no LICENSE file, or ship it in a form that can't be read.
+# checksum is the file's SHA-256. If the file changes, generation fails: check it and update the checksum
 
-# VectorCraft のクレートは、リポジトリ直下の LICENSE-MIT だけを持つ
+# VectorCraft's crates only have LICENSE-MIT at the repository root
 [vectorcraft-affinity]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-brush]
@@ -71,7 +71,7 @@ clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", licens
 [vectorcraft-scriptcheck]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-svg]
-# vendor/ に置いた修正版（vendor/README.md）。ライセンスのファイルもコピーしてある
+# The patched copy in vendor/ (vendor/README.md). Its license files are copied too
 clarify = { license = "MIT OR Apache-2.0", files = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-text]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
@@ -82,21 +82,21 @@ clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", licens
 [vectorcraft-trace]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 
-# craft-libs も同じ
+# The same for craft-libs
 [craft-pdf]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "2f42c0cafc8ad394d91373fe1f342aee5453850b151a51405c68cae9ada86d26" }] }
 [craft-docpath]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "2f42c0cafc8ad394d91373fe1f342aee5453850b151a51405c68cae9ada86d26" }] }
 
-# BSD-3-Clause/MIT のうち、同梱している BSD-3-Clause の文面を使う
+# Of BSD-3-Clause/MIT, use the bundled BSD-3-Clause text
 [brotli-decompressor]
 clarify = { license = "BSD-3-Clause", files = [{ path = "LICENSE", license = "BSD-3-Clause", checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae" }] }
 
-# LICENSE.txt のうち MIT の部分（start〜end の文字列で切り出す）
+# The MIT part of LICENSE.txt (cut out between the start and end strings)
 [libm]
 clarify = { license = "MIT", files = [{ path = "LICENSE.txt", license = "MIT", start = "Permission is hereby granted", end = "SOFTWARE.", checksum = "21a2121221d2a35df2d8d333d00a61ed240446b6107092741ff996941acdc919" }] }
 
-# 以下はクレートに LICENSE ファイルがないため、元のリポジトリから取得する
+# Below: crates without a LICENSE file, whose texts are fetched from the original repositories
 [alloc-stdlib]
 clarify = { license = "BSD-3-Clause", git = [{ path = "LICENSE", license = "BSD-3-Clause", checksum = "c0c56f26d9c051cac4d200c34c84e7ae9aaa853e01a982a1df08b09931e518ae" }] }
 [wasmi]

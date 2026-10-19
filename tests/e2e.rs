@@ -1,7 +1,7 @@
-//! エンドツーエンドのテスト。実際に待ち受けたサーバーに、rmcp の MCP クライアントと
-//! 素の HTTP クライアントで接続する。
+//! End-to-end tests. They connect to a server that is actually listening, with rmcp's MCP client and
+//! a plain HTTP client.
 
-// テストの補助関数は #[test] の外にあるので、テスト用の許可をファイル全体に与える
+// The test helpers are outside #[test], so the test allowances apply to the whole file
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::time::Duration;
@@ -59,13 +59,13 @@ fn ok(result: &CallToolResult) -> &Value {
     result.structured_content.as_ref().unwrap()
 }
 
-/// VectorCraft のツールの結果（JSON のテキスト）を読む。
+/// Reads a VectorCraft tool's result (JSON text).
 fn json_of(result: &CallToolResult) -> Value {
     succeeded(result);
     serde_json::from_str(&text_of(result)).unwrap_or_else(|e| panic!("not JSON ({e}): {}", text_of(result)))
 }
 
-/// 公開しているツール（docs/design-policy.md 4.7節）。
+/// The published tools (docs/design-policy.md section 4.7).
 const TOOLS: &[&str] = &[
     "session_create",
     "session_close",
@@ -128,7 +128,7 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     let moved = call(&client, "transform", json!({"session": session, "ids": [id], "dx": 10})).await;
     succeeded(&moved);
 
-    // SVG と PNG に structuredContent が付くと、Claude Code は本文を表示しない
+    // With structuredContent on SVG and PNG, Claude Code doesn't show the content
     let svg = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
     succeeded(&svg);
     assert!(svg.structured_content.is_none(), "{svg:?}");
@@ -136,7 +136,7 @@ async fn ai_draws_a_rectangle_and_exports_svg_pdf_and_png() {
     assert!(svg_text.contains("<svg"), "{svg_text}");
     assert!(svg_text.contains("#3366ff") || svg_text.contains("#36f"), "{svg_text}");
 
-    // PDF は既定では URL で返る。delivery: inline なら今までどおり Base64 で返る
+    // PDF comes back as a URL by default. With delivery: inline it comes back as Base64, as before
     let pdf = call(
         &client,
         "export_document",
@@ -191,7 +191,7 @@ async fn japanese_text_is_placed_edited_and_exported() {
     .await;
     let id = json_of(&text)["id"].as_u64().unwrap();
 
-    // 文字の差し替えは許可リストのコマンドを command_run で使う
+    // Replacing the text uses an allowlisted command through command_run
     let changed = call(
         &client,
         "command_run",
@@ -218,7 +218,7 @@ async fn fonts_can_be_listed_and_filtered() {
         .as_str()
         .unwrap()
         .to_string();
-    // 同梱フォントの Inter は、どの環境にもある
+    // The bundled Inter font exists in every environment
     let fonts = call(&client, "list_fonts", json!({"session": session, "query": "inter"})).await;
     let families = ok(&fonts)["families"].as_array().unwrap().clone();
     assert!(families.iter().any(|f| f == "Inter"), "{families:?}");
@@ -259,7 +259,7 @@ async fn command_tools_reach_only_allowed_commands() {
     assert!(ids.iter().any(|id| id == "text.setStyle"), "{ids:?}");
     assert!(!ids.iter().any(|id| id == "text.addFontFiles"), "{ids:?}");
 
-    // VectorCraft のツールでも、知らない作業セッションは断られる
+    // VectorCraft's tools also refuse an unknown working session
     let args = json!({"session": "0000", "shape": "rectangle", "x": 0, "y": 0, "width": 1, "height": 1});
     let Value::Object(args) = args else { unreachable!() };
     assert!(
@@ -286,7 +286,7 @@ async fn unknown_sessions_and_unknown_arguments_are_refused() {
         .to_string();
     let args = json!({"session": session, "format": "svg", "path": "/tmp/out.svg"});
     let Value::Object(args) = args else { unreachable!() };
-    // 引数の誤りは、プロトコルエラーかツールのエラー結果のどちらかで返る（どちらでも書き出しはされない）
+    // A wrong argument comes back as either a protocol error or a tool error result (nothing is exported either way)
     match client.call_tool(CallToolRequestParams::new("export_document").with_arguments(args)).await {
         Err(_) => {}
         Ok(r) => {
@@ -393,7 +393,7 @@ async fn large_exports_come_back_as_download_urls() {
         .await,
     );
 
-    // PDF は常に URL。応答は小さな JSON だけ
+    // PDF is always a URL. The reply is only a small JSON
     let pdf = call(&client, "export_document", json!({"session": session, "format": "pdf"})).await;
     let download = ok(&pdf)["download"].clone();
     let url = download["url"].as_str().unwrap().to_string();
@@ -401,7 +401,7 @@ async fn large_exports_come_back_as_download_urls() {
     assert_eq!(download["name"], "ポスター.pdf");
     assert!(ok(&pdf).get("dataBase64").is_none());
 
-    // URL の ID が合鍵なので、ブラウザと同じくトークンなしで取れる。期限までは何度でも取れる
+    // The ID in the URL is the key, so it can be fetched without a token, as in a browser, any number of times until it expires
     let got = get(&url, &[]).await;
     assert_eq!(got.status(), 200);
     assert_eq!(got.headers()["content-type"], "application/pdf");
@@ -415,12 +415,12 @@ async fn large_exports_come_back_as_download_urls() {
     assert!(got.bytes().await.unwrap().starts_with(b"%PDF"), "not a PDF");
     assert_eq!(get(&url, &[]).await.status(), 200);
 
-    // ID が違う、Host や Origin が許可されていない
+    // A wrong ID, or a Host or Origin that isn't allowed
     assert_eq!(get(&format!("{base}/files/0000"), &[]).await.status(), 404);
     assert_eq!(get(&url, &[("Host", "evil.example")]).await.status(), 403);
     assert_eq!(get(&url, &[("Origin", "http://evil.example")]).await.status(), 403);
 
-    // SVG も delivery: url で URL にできる
+    // SVG can also become a URL with delivery: url
     let svg = call(
         &client,
         "export_document",
@@ -431,7 +431,7 @@ async fn large_exports_come_back_as_download_urls() {
     let body = get(&svg_url, &[]).await.text().await.unwrap();
     assert!(body.contains("<svg"), "{body}");
 
-    // 作業セッションを閉じると、預けたものも消える
+    // Closing the working session drops what it stored
     ok(&call(&client, "session_close", json!({"session": session})).await);
     assert_eq!(get(&url, &[]).await.status(), 404);
     let _ = client.cancel().await;
@@ -439,8 +439,8 @@ async fn large_exports_come_back_as_download_urls() {
 
 #[tokio::test]
 async fn download_urls_follow_the_public_url() {
-    // リバースプロキシが https://example.co.jp/artserver/ を ArtServer の / に渡す構成
-    let base = start_with(Limits::default(), Some("https://example.co.jp/artserver")).await;
+    // A reverse proxy passes https://example.com/artserver/ to ArtServer's /
+    let base = start_with(Limits::default(), Some("https://example.com/artserver")).await;
     let client = client(&base, TOKEN).await;
     let session = ok(&call(&client, "session_create", json!({})).await)["session"]
         .as_str()
@@ -450,8 +450,8 @@ async fn download_urls_follow_the_public_url() {
     let pdf = call(&client, "export_document", json!({"session": session, "format": "pdf"})).await;
     let download = ok(&pdf)["download"].clone();
     let path = download["path"].as_str().unwrap().to_string();
-    assert_eq!(download["url"].as_str().unwrap(), format!("https://example.co.jp/artserver{path}"));
-    // ArtServer 自身は /files/… で返す（前置きはプロキシが外す）
+    assert_eq!(download["url"].as_str().unwrap(), format!("https://example.com/artserver{path}"));
+    // ArtServer itself serves /files/… (the proxy strips the prefix)
     assert_eq!(get(&format!("{base}{path}"), &[]).await.status(), 200);
     let _ = client.cancel().await;
 }

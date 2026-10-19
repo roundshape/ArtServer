@@ -1,4 +1,4 @@
-//! Bearer トークン認証。認証に通った要求には [`Principal`] を付けて先へ渡す。
+//! Bearer token authentication. A request that passes gets a [`Principal`] attached and is passed on.
 
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use subtle::ConstantTimeEq;
 
-/// 認証済みの主体。作業セッションのハンドルはこの主体に結びつく。
+/// An authenticated principal. Working session handles are bound to it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Principal(Arc<str>);
 
@@ -18,7 +18,7 @@ impl Principal {
     }
 }
 
-/// 受け付けるトークンと、それに対応する主体。
+/// The accepted token and the principal it stands for.
 #[derive(Clone)]
 pub struct Auth {
     token: Arc<[u8]>,
@@ -26,7 +26,7 @@ pub struct Auth {
 }
 
 impl Auth {
-    /// トークン1つを受け付ける。主体は今のところ1つだけ（複数ユーザー対応は Phase 3）。
+    /// Accepts one token. There is only one principal for now (multiple users come in Phase 3).
     pub fn new(token: &str) -> Self {
         Self {
             token: token.as_bytes().into(),
@@ -39,7 +39,7 @@ impl Auth {
     }
 }
 
-/// `Authorization: Bearer <token>` を検査するミドルウェア。
+/// Middleware that checks `Authorization: Bearer <token>`.
 pub async fn require_bearer(State(auth): State<Auth>, mut req: Request, next: Next) -> Response {
     let principal = req
         .headers()
