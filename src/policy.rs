@@ -648,6 +648,33 @@ const SHARED: &[&str] = &[
     "shaper.scribble",
     "shaper.select",
     "slice.list",
+    // Fourth batch (2026-10-19): the commands left to be decided individually, but those that take files as data,
+    // put exports in the reply, only change the screen, write scripts into exported SVG, or prepare the closed
+    // exports (docs/design-policy.md section 4.7)
+    // clipboard: the working session's own, with text only
+    "clipboard.conflicts",
+    "clipboard.exportText",
+    "clipboard.importText",
+    // css: the CSS of objects, as text
+    "css.generate",
+    "css.selection",
+    // flattener: presets in the working session's preferences, as data only, and a preview
+    "flattener.presets.delete",
+    "flattener.presets.export",
+    "flattener.presets.import",
+    "flattener.presets.list",
+    "flattener.presets.save",
+    "flattener.preview",
+    // imageTrace: tracing placed images (the engine caps the image and the paths)
+    "imageTrace.expand",
+    "imageTrace.make",
+    "imageTrace.makeAndExpand",
+    "imageTrace.presets",
+    "imageTrace.release",
+    // svgInteractivity: reading and removing the event scripts, such as those imported SVG brings
+    "svgInteractivity.clearEvents",
+    "svgInteractivity.info",
+    "svgInteractivity.removeEvent",
 ];
 
 /// Formats allowed for export.
@@ -781,6 +808,37 @@ mod tests {
             "importMatches.list",
             "importMatches.set",
             "importMatches.reset",
+            // Closed in the fourth batch: files given as data, exports in the reply, the screen only, event
+            // scripts written into exported SVG, and what only the closed exports use
+            "clipboard.importEmf",
+            "clipboard.importEps",
+            "clipboard.importImage",
+            "clipboard.importPdf",
+            "clipboard.importSvg",
+            "clipboard.exportPdf",
+            "clipboard.exportPng",
+            "clipboard.exportSvg",
+            "css.export",
+            "clipboard.flavours",
+            "imageTrace.setView",
+            "svgInteractivity.setEvent",
+            "svgInteractivity.addFile",
+            "svgInteractivity.removeFile",
+            "assets.add",
+            "assets.export",
+            "assets.list",
+            "assets.remove",
+            "assets.rename",
+            "assets.settings.set",
+            "pdf.preset.list",
+            "pdf.preset.save",
+            "pdf.preset.delete",
+            "pdf.preset.import",
+            "pdf.preset.export",
+            "webExport.presets.list",
+            "webExport.presets.save",
+            "webExport.presets.delete",
+            "webExport.settings",
         ] {
             for caller in BOTH {
                 assert!(check(id, &json!({}), caller).is_err(), "{id} should be refused");
@@ -817,6 +875,8 @@ mod tests {
             ("dataset.import", json!({"csv": "name,v\nA,1"})),
             ("perspective.presets.export", json!({})),
             ("perspective.presets.import", json!({"data": "{}"})),
+            ("flattener.presets.export", json!({})),
+            ("flattener.presets.import", json!({"data": "{}"})),
         ] {
             assert!(
                 check(id, &json!({"path": "/tmp/x"}), Caller::VectorCraftTool).is_err(),

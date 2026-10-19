@@ -789,3 +789,37 @@ Opened: `color.convert`, `gamutCheck`, `harmony`, `plates`; `document.activate` 
 1. The fourth batch: the 48 "decided individually later" commands
 2. Add to `export_document` what the closed exports offer (PDF/X and other PDF options, printer's marks, bleed, exporting the selection, EPS, DXF), and `document.pdfInfo` as a tool that takes an upload
 3. Check from Claude Code in a new conversation
+
+## 2026-10-19 Opening the fourth batch: the commands decided individually
+
+### Policy
+
+The 48 "decided individually later" commands of design policy section 4.7 (`assets`, `clipboard`, `css`, `flattener`, `imageTrace`, `pdf.preset`, `svgInteractivity`, `webExport`) were read in full, and three points were checked in the engine's code: Image Trace scales down images over 64 megapixels and caps the anchors it makes; its `library` parameter looks up only the built-in swatch libraries and those loaded into the working session (none, while `swatch.library.*` is closed), so nothing is read from disk; `css.selection` only names the pictures of rasterized art. The project owner agreed to open 19 and leave 29 closed:
+
+| Left closed | Why |
+|---|---|
+| `clipboard.importPdf`, `importImage`, `importSvg`, `importEps`, `importEmf` | They read a file given as data in the arguments; files come in through uploads, which don't accept EPS, EMF, TIFF or SVGZ |
+| `clipboard.exportPdf`, `exportPng`, `exportSvg`, `css.export` | They put an export in the reply (PNG up to 64 times); exports belong to `export_document` |
+| `clipboard.flavours`, `imageTrace.setView` | The formats handed to the system clipboard, and the screen only |
+| `svgInteractivity.setEvent`, `addFile`, `removeFile` | They write JavaScript into exported SVG, which runs when a user opens the file in a browser; an AI led on by a malicious instruction could plant a script (`addFile`/`removeFile` take a file string the path check refuses anyway) |
+| `assets.*` (6), `pdf.preset.*` (5), `webExport.*` (4) | The setup of exports that stay closed (Asset Export, the detailed PDF options, Save for Web); of no use until `export_document` takes those features, and opened with them |
+
+Opened: `imageTrace.make`, `makeAndExpand`, `expand`, `release`, `presets` (an image placed through an upload can be traced into paths); `flattener.presets.list`/`save`/`delete`/`import`/`export` (the working session's preferences, as data only) and `flattener.preview`; `css.selection`/`generate`; `clipboard.conflicts`/`importText`/`exportText`; `svgInteractivity.info`/`removeEvent`/`clearEvents` (the event scripts an imported SVG brings can be read and removed).
+
+### What was done
+
+- `src/policy.rs`: the 19 commands, with the reasons for what stays closed; the allowlist has 594.
+- Tests: the 29 closed ones are refused, and the flattener presets refuse a path but work as data (unit). A new E2E test imports SVG with an `onclick` script, reads it with `svgInteractivity.info` and removes it with `clearEvents` (the exported SVG no longer has it), gets a rectangle's CSS, pastes text through `clipboard.importText`, saves and exports a flattener preset (a path is refused), previews flattening, uploads and places a PNG and traces and expands it with `imageTrace.make`/`expand`, and checks that eight of the closed ones answer "not allowed".
+- Design policy section 4.7 and chapter 11.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 73 passed (51 unit, 22 E2E). The first run failed in the test itself, which read `document.find`'s result under the wrong key; it now finds the rectangle by its SVG id |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+### Next steps
+
+1. Add to `export_document` what the closed exports offer (PDF/X and other PDF options, printer's marks, bleed, exporting the selection, EPS, DXF), opening `pdf.preset.*` with them, and `document.pdfInfo` as a tool that takes an upload
+2. Check from Claude Code in a new conversation

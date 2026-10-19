@@ -471,6 +471,78 @@ async fn the_third_batch_of_document_commands_works_through_command_run() {
 }
 
 #[tokio::test]
+async fn the_fourth_batch_of_document_commands_works_through_command_run() {
+    // The commands decided individually (docs/design-policy.md section 4.7), run as the AI runs them
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let run = |id: &'static str, params: Value| {
+        let args = json!({"session": session, "id": id, "params": params});
+        let client = &client;
+        async move { call(client, "command_run", args).await }
+    };
+
+    // Imported SVG keeps its event scripts; they can be read and removed
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect id="button" x="20" y="20" width="60" height="40" fill="#3366ff" onclick="alert(1)"/></svg>"##;
+    succeeded(&call(&client, "import_svg", json!({"session": session, "svg": svg})).await);
+    let found = json_of(&run("document.find", json!({"name": "button"})).await);
+    let rect = found["matches"][0]["id"].as_u64().unwrap_or_else(|| panic!("{found}"));
+    let events = json_of(&run("svgInteractivity.info", json!({"ids": [rect]})).await);
+    assert_eq!(events["events"][0]["event"], "onclick", "{events}");
+    succeeded(&run("svgInteractivity.clearEvents", json!({"ids": [rect]})).await);
+    let exported = text_of(&call(&client, "export_document", json!({"session": session, "format": "svg"})).await);
+    assert!(!exported.contains("alert(1)"), "{exported}");
+
+    let css = json_of(&run("css.selection", json!({"ids": [rect]})).await);
+    assert!(css["css"].as_str().unwrap().contains("background"), "{css}");
+
+    // Text through the working session's own clipboard
+    succeeded(&run("clipboard.importText", json!({"text": "Pasted"})).await);
+    assert_eq!(json_of(&run("clipboard.exportText", json!({})).await)["text"], "Pasted");
+    succeeded(&run("edit.paste", json!({})).await);
+
+    // Flattener presets only as data: a file path is refused
+    succeeded(&run("flattener.presets.save", json!({"name": "Proofs", "preset": "high"})).await);
+    let presets = json_of(&run("flattener.presets.export", json!({})).await);
+    assert!(presets.get("data").is_some(), "{presets}");
+    let to_file = run("flattener.presets.export", json!({"path": "/tmp/presets.vcflattener"})).await;
+    assert!(text_of(&to_file).contains("file paths"), "{}", text_of(&to_file));
+    succeeded(&run("flattener.preview", json!({})).await);
+
+    // An uploaded image is traced into paths
+    let png = call(&client, "export_document", json!({"session": session, "format": "png"})).await;
+    let png = png.content.iter().find_map(|c| c.as_image()).unwrap().data.clone();
+    let png = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, png).unwrap();
+    let (upload, url) = new_upload(&client, &session, "picture.png").await;
+    assert_eq!(put(&url, &[], png).await.status(), 200);
+    let placed = json_of(&call(&client, "place_upload", json!({"session": session, "upload": upload})).await);
+    let image = placed["ids"][0].as_u64().unwrap();
+    let traced = json_of(&run("imageTrace.make", json!({"id": image})).await);
+    assert!(traced["paths"].as_u64().unwrap() >= 1, "{traced}");
+    let expanded = json_of(&run("imageTrace.expand", json!({"id": traced["id"]})).await);
+    assert!(!expanded["ids"].as_array().unwrap().is_empty(), "{expanded}");
+
+    // What the fourth batch left closed stays refused
+    for id in [
+        "clipboard.importSvg",
+        "clipboard.exportPng",
+        "css.export",
+        "imageTrace.setView",
+        "svgInteractivity.setEvent",
+        "assets.list",
+        "pdf.preset.list",
+        "webExport.settings",
+    ] {
+        let r = run(id, json!({})).await;
+        assert!(text_of(&r).contains("not allowed"), "{id}: {}", text_of(&r));
+    }
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
 async fn unknown_sessions_and_unknown_arguments_are_refused() {
     let base = start(Limits::default()).await;
     let client = client(&base, TOKEN).await;
