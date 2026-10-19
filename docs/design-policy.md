@@ -19,6 +19,7 @@
   - 2026-10-19 Translated into English
   - 2026-10-19 Updated the status of Phase 2 to in progress (chapter 11)
   - 2026-10-19 Decided to leave "VectorCraft" in exported files as is (section 13.2)
+  - 2026-10-19 Recorded the trademark check for "ArtServer" (chapter 9, section 13.2)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -479,7 +480,7 @@ If method 2 is chosen, the embedded fonts become fonts that ArtServer distribute
   - **Do not use the ArtCraft name or logo** (ArtCraft is not open source).
   - The README states the origin in text as "based on VectorCraft by the ArtCraft team", so that it is not mistaken for an official derivative.
   - When mentioning compatibility with Illustrator, include a note on Adobe's trademarks.
-  - Check for trademark conflicts with the name "ArtServer" before publication.
+  - Check for trademark conflicts with the name "ArtServer" before publication (done on 2026-10-19; section 13.2, #7).
 
 ---
 
@@ -617,7 +618,7 @@ When migrating, test with emphasis on "the front end keeps running when a worker
 | 4 | Finalizing third-party licenses (`cargo deny` / `cargo about`) → **Done (2026-10-18)**. `THIRD_PARTY_NOTICES.md` is generated from `deny.toml`, `about.toml` and `about.hbs`. No GPL / LGPL / MPL | Phase 1 |
 | 5 | How to provide CJK fonts (such as Japanese) (section 7.3) | Phase 2 |
 | 6 | Handling of "VectorCraft" written into output files (PDF Producer etc.) → **Decided (2026-10-19): left as is**. The PDF Creator and Producer stay "VectorCraft", and PDFs keep the embedded editing data (`vectorcraft-editing.vectorcraft`) | Phase 2 |
-| 7 | Checking trademark conflicts for "ArtServer" | Before publication |
+| 7 | Checking trademark conflicts for "ArtServer" → **Done (2026-10-19): no conflict found**. US (USPTO): only dead marks (ARTSERVER, abandoned 1997; ARTSERVE, cancelled). Japan (J-PlatPat): no ARTSERVER or アートサーバー; the closest, AUTO SERVER (class 9, including software), is not similar (different first sound and meaning). EU, WIPO and other countries were not checked. Registering "ArtServer" as a trademark would need a patent attorney's review | Before publication |
 | 8 | Whether color settings need to be switched per job (if so, consider moving process isolation earlier; section 12.4) | Phase 2 |
 | 9 | Isolation unit and method (section 12.3) | When Phase 3 starts |
 | 11 | Passing large data (section 4.6) → **Export implemented (2026-10-18)**. Thresholds are SVG 32KB and PNG 256KB, and PDF is always a URL. Retrieval uses expiring URLs that need no token (that Claude Code's AI can fetch files with curl was verified with the token-required version). Download in a browser is also verified. **Not implemented**: returning a resource link, upload for import | Phase 2 |

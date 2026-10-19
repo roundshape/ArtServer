@@ -470,3 +470,22 @@ Found while explaining how concurrent requests and working sessions are handled.
 
 1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)
 2. Check the name "ArtServer" for trademark conflicts before publishing (design policy section 13.2, #7)
+
+## 2026-10-19 Trademark check for the name "ArtServer"
+
+A preliminary check before publishing (design policy section 13.2, #7). It is not a legal clearance by a patent attorney.
+
+| Where | Result |
+|---|---|
+| USPTO ([official search](https://tmsearch.uspto.gov/)) | No live marks. ARTSERVER (serial 75042242, class 42, filed 1996) was abandoned in 1997, and the two ARTSERVE marks (classes 35, 41, 45) were cancelled. No VECTORCRAFT mark. The live ARTCRAFT marks belong to unrelated companies (toys, lighting, film) |
+| J-PlatPat ([trademark search](https://www.j-platpat.inpit.go.jp/t0100), searched by the project owner) | Mark text ARTSERVER: 0 hits. Similar pronunciation アートサーバー: 7 hits, none of them アートサーバー. The closest is AUTO SERVER (owner: 株式会社オートサーバー, a used-car trading company; registrations 5913670 and 6530958). Its class 9 includes similarity group 11C01, which covers computer programs, but the project owner judged the names not similar: the first sound (アー / オー) and the meaning (art / auto) differ |
+| Products with similar names | Blackdove "Art Server" (hardware that shows digital art on a display) and Trimble TruckMate "ART Server" (an API server for logistics). No software named ArtServer in vector graphics or MCP |
+| Package names | `artserver` is free on crates.io, npm, PyPI and Homebrew. GitHub has about 20 small personal repositories named artserver. artserver.com is a parked domain |
+| Not checked | EU (EUIPO / TMview), WIPO, other countries |
+
+- Conclusion: no conflict found, and the name ArtServer stays. Registering "ArtServer" as a trademark in Japan would need a patent attorney's review, because AUTO SERVER covers software.
+- ArtCraft names its apps "…Craft" (such as VectorCraft), so ArtServer is unlikely to be taken for an ArtCraft product. The README states that ArtServer is not an official VectorCraft derivative.
+
+### Next steps
+
+1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)
