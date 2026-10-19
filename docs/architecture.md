@@ -1,10 +1,10 @@
 # ArtServer Architecture Investigation and Approach Decision (Phase 0)
 
 - Created: 2026-10-17
-- Status: **Option A-2 adopted (approved by the project owner on 2026-10-17)**. This document is the investigation record as of Phase 0. From here on, `docs/design-policy.md` is authoritative for the design policy (session handling and other points changed to follow the latest MCP specification).
+- Status: **Option A-2 adopted (approved by the project owner on 2026-10-17)**. This document is the investigation record as of Phase 0. From here on, `docs/design-policy.md` is authoritative for the design policy (session handling and other points changed to follow the latest MCP specification). The findings are kept as they were; what was verified or decided later is added after "→" with its date (updated 2026-10-19).
 - Subject: VectorCraft `~/MyTasks/RoundShape/vectorcraft`
   - origin: https://github.com/storytold/vectorcraft.git
-  - commit: `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c` (2026-10-17, v0.12.0 + 335 commits)
+  - commit: `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c` (2026-10-17, v0.12.0 + 335 commits). The `path:line` references below are to this commit → ArtServer references v0.13.1 (`904f0fe`) since 2026-10-18 (design policy chapter 8)
 - Method: static reading of the source only. No build or test was run (Rust is not installed on the development machine, as noted below).
 - Reliability order: code → comments → function names. Each `path:line` below is a location in the VectorCraft repository.
 
@@ -16,7 +16,7 @@
 
 - The engine layers (L0–L5) do not depend on the GUI, and rendering is CPU-only (`vello_cpu`). There is no structural obstacle to embedding it in a server.
 - Every engine feature can be called with "command ID + JSON arguments" (`Session::execute`). Mapping it to MCP tools is easy.
-- The existing `vectorcraft-mcp` is built for **stdio, a single user, and trusted local use**, and its assumptions do not fit network exposure or multiple sessions. Treat it as a reference implementation and do not depend on it.
+- The existing `vectorcraft-mcp` is built for **stdio, a single user, and trusted local use**, and its assumptions do not fit network exposure or multiple sessions. Treat it as a reference implementation and do not depend on it. → Revised on 2026-10-18: its server and transport parts are not used, but ArtServer uses its tool part (`call_tool`, `Backend`) through a Backend of its own (design policy section 4.7).
 - On the other hand, **the engine has mutable state shared across the whole process** (color settings, font DB, plugin registration, etc.). The MVP handles this by "not allowing commands that change that state", and keeps a structure that can move to process isolation in the future.
 
 ---
@@ -35,7 +35,7 @@ VectorCraft itself defines a layer structure and checks it with `cargo xtask lay
 | L3 | `render`, `svg`, `pdf`, `format`, `eps`, `cad`, `metafile` | Indirect dependency |
 | L4 | `tools` | Indirect dependency |
 | L5 | **`engine`** (session, history, selection, about 700 commands, file I/O) | **Direct dependency** |
-| L6 | `ui-egui` (GUI), `mcp` (stdio MCP) | Not used (`mcp` is a reference implementation) |
+| L6 | `ui-egui` (GUI), `mcp` (stdio MCP) | Not used (`mcp` is a reference implementation) → `mcp`'s tool part is used since 2026-10-18 (design policy section 4.7) |
 | L7 | `apps/vectorcraft` (GUI), `apps/vectorcraft-cli`, `apps/vectorcraft-web` | Not used |
 
 - **Layers below L6 must not depend on UI crates (egui/eframe/winit/rfd/craft-ui)** (`AGENTS.md:45`).
@@ -125,10 +125,10 @@ document.export   {format: "svg"|"pdf"|"png", ...}    → {dataBase64, ...}     
 ### 2.7 Build and environment
 
 - Requires: **Rust 1.95 or later, edition 2024** (`Cargo.toml:8-10`). There is no `rust-toolchain` file.
-- **Rust is not installed on the development machine (this Mac)** (no `cargo` / `rustc` / `~/.rustup`).
+- **Rust is not installed on the development machine (this Mac)** (no `cargo` / `rustc` / `~/.rustup`). → Installed on 2026-10-17: Homebrew's `rust` (1.99.1), not rustup (design policy section 13.1 #2).
 - The dependencies of the non-GUI parts are pure Rust. For system libraries, the linker alone (Xcode Command Line Tools on macOS) should be enough.
 - Building needs network access to crates.io and `github.com/storytold/craft-libs` (git dependency).
-- Disk: about 30GB per target for the whole workspace (`AGENTS.md:58`). ArtServer uses only the engine, so a few GB is expected (not yet verified).
+- Disk: about 30GB per target for the whole workspace (`AGENTS.md:58`). ArtServer uses only the engine, so a few GB is expected (not yet verified). → Measured on 2026-10-19: ArtServer's `target/` is 11 GB (9.2 GB of it in `deps`, 1.9 GB `incremental`). It holds only debug builds, made over and over for two days with tests and clippy; a clean build and a release build were not measured.
 - The repository has no general build/test CI for Linux/macOS. The quality gate is the local `cargo xtask ci`.
 
 ### 2.8 Following upstream
@@ -139,12 +139,12 @@ document.export   {format: "svg"|"pdf"|"png", ...}    → {dataBase64, ...}     
   - `[patch.crates-io]` (`Cargo.toml:126-130`, replaces krilla / hayro-* with craft-libs)
   - `[profile.*]` (including the setting that builds dependency crates at opt-level 2)
   - The workspace lint settings, `Cargo.lock`
-- Without copying `[patch.crates-io]`, the PDF backend becomes the crates.io version, and the panic protections and decode limits that VectorCraft adds are lost. The build itself may also fail (not yet verified).
+- Without copying `[patch.crates-io]`, the PDF backend becomes the crates.io version, and the panic protections and decode limits that VectorCraft adds are lost. The build itself may also fail (not yet verified). → Not tried: ArtServer copies the patch, and `Cargo.lock` was confirmed to use the craft-libs versions (progress log 2026-10-17).
 
 ### 2.9 License and brand
 
 - VectorCraft itself and craft-libs are **MIT OR Apache-2.0**.
-- Among the dependencies that go into ArtServer, there is **no GPL / LGPL / MPL / proprietary** code (static analysis of Cargo.lock; not yet confirmed with `cargo deny`).
+- Among the dependencies that go into ArtServer, there is **no GPL / LGPL / MPL / proprietary** code (static analysis of Cargo.lock; not yet confirmed with `cargo deny`). → Confirmed with `cargo deny` on 2026-10-18; `THIRD_PARTY_NOTICES.md` is generated with `cargo about` (design policy section 13.2 #4).
 - Notices required for distribution:
   - VectorCraft's MIT notice (`Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors`)
   - MIT notices for craft-libs and the Hayro Authors (`licenses/pdf-backend/*`)
@@ -269,15 +269,15 @@ The MVP assumes "trusted users and local use", and **states these clearly as kno
 
 | # | Issue | Action |
 |---|---|---|
-| 1 | Rust is not installed on the development machine (1.95 or later is required) | Ask the project owner whether it can be installed with rustup |
-| 2 | How to implement the MCP protocol layer (use the official Rust SDK `rmcp` etc., or implement it ourselves) | Decide when implementation starts, after checking each candidate's latest version and its Streamable HTTP support |
-| 3 | Whether the build passes without `[patch.crates-io]` | No real impact, since the plan is to copy the patch. Check at build time |
-| 4 | Confirming third-party licenses | Confirm by running `cargo deny` / `cargo about` on the ArtServer side |
-| 5 | Policy for CJK fonts such as Japanese (install on the server / embed with `CRAFT_FONTS_DIR` / add at runtime) | Decide in Phase 2. High priority for print use |
-| 6 | Handling of "VectorCraft" written into output files (PDF Producer, etc.) | Consider whether to accept it as a statement of origin, or whether it can be overwritten from outside the engine |
-| 7 | Checking the name "ArtServer" for trademark conflicts | Check before release (development plan §7) |
-| 8 | Upstream updates very often, and there is no promise of API stability | Pin the rev and update in a planned way |
-| 9 | Whether `Renderer` / ArtServer's session type is Send | Check with the compiler at build time |
+| 1 | Rust is not installed on the development machine (1.95 or later is required) | Ask the project owner whether it can be installed with rustup → **Installed (2026-10-17)**: Homebrew's `rust` (1.99.1), not rustup (design policy section 13.1 #2) |
+| 2 | How to implement the MCP protocol layer (use the official Rust SDK `rmcp` etc., or implement it ourselves) | Decide when implementation starts, after checking each candidate's latest version and its Streamable HTTP support → **Decided: rmcp 3.5 series** (design policy section 13.2 #1) |
+| 3 | Whether the build passes without `[patch.crates-io]` | No real impact, since the plan is to copy the patch. Check at build time → **Not tried**: the patch is copied, and `Cargo.lock` uses the craft-libs versions (progress log 2026-10-17) |
+| 4 | Confirming third-party licenses | Confirm by running `cargo deny` / `cargo about` on the ArtServer side → **Done (2026-10-18)**: no GPL / LGPL / MPL (design policy section 13.2 #4) |
+| 5 | Policy for CJK fonts such as Japanese (install on the server / embed with `CRAFT_FONTS_DIR` / add at runtime) | Decide in Phase 2. High priority for print use → **Not done for now (2026-10-19)**: the fonts installed in the OS and `--font-dirs` serve; embedding fonts in the build is not done (design policy section 13.2 #5) |
+| 6 | Handling of "VectorCraft" written into output files (PDF Producer, etc.) | Consider whether to accept it as a statement of origin, or whether it can be overwritten from outside the engine → **Decided (2026-10-19): left as is** (design policy section 13.2 #6) |
+| 7 | Checking the name "ArtServer" for trademark conflicts | Check before release (development plan §7) → **Done (2026-10-19)**: no conflict found in the US and Japan (design policy section 13.2 #7) |
+| 8 | Upstream updates very often, and there is no promise of API stability | Pin the rev and update in a planned way → **Followed**: pinned to a commit, updated to v0.13.1 (`904f0fe`) on 2026-10-18 (design policy chapter 8) |
+| 9 | Whether `Renderer` / ArtServer's session type is Send | Check with the compiler at build time → **Verified** (the build passed; design policy section 13.2 #3) |
 
 ---
 

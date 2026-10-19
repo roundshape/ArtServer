@@ -877,3 +877,9 @@ Of three options (A: separate the wait from the run, with the same length for bo
 ### Next steps
 
 1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
+
+## 2026-10-19 Bringing architecture.md up to date
+
+`docs/architecture.md` is the Phase 0 investigation record. Its findings are kept as they were, and what was verified or decided later is added after "→" with its date: the nine open issues of chapter 6 (all settled), Rust installed, the license check, the build without `[patch.crates-io]` (not tried; the patch is copied), the use of `vectorcraft-mcp`'s tool part, and the VectorCraft commit now referenced.
+
+- The build size was measured for the first time: `target/` is 11 GB (`du -sh`), against "a few GB" expected in Phase 0. It holds only debug builds, made over and over with tests and clippy; a clean build and a release build were not measured.
