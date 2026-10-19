@@ -285,6 +285,65 @@ async fn command_tools_reach_only_allowed_commands() {
 }
 
 #[tokio::test]
+async fn the_first_batch_of_document_commands_works_through_command_run() {
+    // One command of each group opened in the first batch (docs/design-policy.md section 4.7), run as the AI runs them
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": session, "width": 400, "height": 300})).await);
+    let mut ids = Vec::new();
+    for (x, y) in [(20, 20), (60, 40), (20, 150), (200, 150), (250, 20), (270, 40)] {
+        let shape = json!({"session": session, "shape": "rectangle", "x": x, "y": y, "width": 60, "height": 40, "fill": "#3366ff"});
+        ids.push(json_of(&call(&client, "draw_shape", shape).await)["id"].as_u64().unwrap());
+    }
+    let run = |id: &'static str, params: Value| {
+        let args = json!({"session": session, "id": id, "params": params});
+        let client = &client;
+        async move { call(client, "command_run", args).await }
+    };
+
+    succeeded(&run("artboard.new", json!({"x": 420, "y": 0, "width": 200, "height": 200, "name": "second"})).await);
+    succeeded(&run("artboard.setProps", json!({"index": 1, "name": "renamed"})).await);
+
+    succeeded(&run("transparency.set", json!({"ids": [ids[0]], "opacity": 50})).await);
+    let info = json_of(&run("transparency.info", json!({"ids": [ids[0]]})).await);
+    assert_eq!(info["opacity"].as_f64(), Some(50.0), "{info}");
+    succeeded(&run("appearance.addFill", json!({"ids": [ids[0]]})).await);
+
+    succeeded(&run("swatch.new", json!({"name": "Brand Blue", "color": "#3366ff"})).await);
+    let swatches = text_of(&run("swatch.list", json!({})).await);
+    assert!(swatches.contains("Brand Blue"), "{swatches}");
+
+    succeeded(&run("select.set", json!({"ids": [ids[1]]})).await);
+    succeeded(&run("symbol.new", json!({"name": "Logo"})).await);
+    succeeded(&run("symbol.place", json!({"name": "Logo", "x": 300, "y": 250})).await);
+
+    succeeded(&run("object.blend.make", json!({"ids": [ids[2], ids[3]], "steps": 3})).await);
+    succeeded(&run("select.set", json!({"ids": [ids[4], ids[5]]})).await);
+    succeeded(&run("object.compoundPath.make", json!({})).await);
+
+    succeeded(&run("guide.list", json!({})).await);
+    succeeded(&run("graphicStyle.list", json!({})).await);
+
+    // What the first batch left out stays refused
+    for id in [
+        "artboard.copy",
+        "graphicStyle.libraries",
+        "transparency.viewOpacityMask",
+        "perspective.presets.export",
+    ] {
+        let r = run(id, json!({})).await;
+        assert!(text_of(&r).contains("not allowed"), "{id}: {}", text_of(&r));
+    }
+    let svg = text_of(&call(&client, "export_document", json!({"session": session, "format": "svg"})).await);
+    assert!(svg.contains("<svg"), "{svg}");
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
 async fn unknown_sessions_and_unknown_arguments_are_refused() {
     let base = start(Limits::default()).await;
     let client = client(&base, TOKEN).await;

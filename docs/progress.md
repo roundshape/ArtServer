@@ -703,3 +703,26 @@ From the review of concurrency and sessions above: there was no server-wide limi
 - New unit test: with a queue of one, while the session's thread waits for a slot, the second request waits in the queue and the third is refused as busy (the slot is held by the test, so the timing doesn't depend on how long the engine takes; passed 10 runs in a row). The config test covers the default and the value.
 - README (English and Japanese) settings table, and design policy section 5.1.
 - `cargo test --offline --locked`: all 69 passed (51 unit, 18 E2E). `cargo clippy` / `cargo fmt --check`: no warnings / no changes.
+
+## 2026-10-19 Opening the first batch of document commands
+
+### Inventory
+
+Read every `cmd!` declaration in VectorCraft's engine (`crates/engine/src`) with a script: 763 commands, all with distinct ids, 159 of them read only (`query`). All 75 allowlisted commands were among them. By the categories of design policy section 4.7: "opened step by step" 558 (69 open, 43 of the rest read only), "not opened" 106, "decide later" 48, ArtServer's tools 4, and 47 in namespaces the section doesn't classify yet (`document`, `color`, `eyedropper`, `image`, `importMatches`, `magicWand`, `node`, `shaper`, `slice`). The full list went to `~/Desktop/artserver-output/vectorcraft-commands.csv` for the project owner. (Earlier notes said about 160 read-only commands could be opened early; that was all categories together.)
+
+### Policy
+
+The project owner chose a first batch: the read-only commands of "opened step by step", plus artboards, transparency, gradients, appearance, swatches, symbols, and clipping masks, compound paths and blends. Each of the 131 candidates' parameter descriptions was read. 11 were left out: `artboard.copy` and `artboard.cut` (useful only with paste, part of the clipboard commands left for later), `graphicStyle.libraries` and `graphicStyle.library` (the user library folder), `perspective.presets.*` (file paths) and `perspective.widget.options` (screen only; perspective is for a later batch), and `transparency.viewOpacityMask` (screen only). The preferences some commands set (`appearance.setNewArtBasic`, `graphicStyle.setOptions`, the new-mask toggles) live in the engine's `Session` (`s.prefs`, `s.menu`), so they stay within one working session. `prefs.set` itself stays closed: applying preferences also sets process-wide state (the user font folders, hyphenation exceptions and rendering threads; `crates/engine/src/cmd/prefscmds.rs`).
+
+### What was done
+
+- `src/policy.rs`: 120 commands added to the allowlist, grouped with comments; 195 in all. `dataset.export` is open only as data (a string `path` is refused like every path).
+- Tests: the left-out commands are refused, and `dataset.export` with a path is refused (unit); one command of each group runs through `command_run` as the AI runs them: a new artboard and its properties, opacity 50% (read back with `transparency.info`), an added fill, a new swatch listed by `swatch.list`, a symbol made and placed, a blend, a compound path, `guide.list` and `graphicStyle.list`; the left-out ones answer "not allowed" (E2E). The existing test checks that every allowlisted command exists in the engine.
+- Design policy section 4.7 and chapter 11.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 70 passed (51 unit, 19 E2E) |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
