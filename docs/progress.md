@@ -823,3 +823,25 @@ Opened: `imageTrace.make`, `makeAndExpand`, `expand`, `release`, `presets` (an i
 
 1. Add to `export_document` what the closed exports offer (PDF/X and other PDF options, printer's marks, bleed, exporting the selection, EPS, DXF), opening `pdf.preset.*` with them, and `document.pdfInfo` as a tool that takes an upload
 2. Check from Claude Code in a new conversation
+
+## 2026-10-19 Not extending export_document for now
+
+### Policy
+
+A plan to extend `export_document` was drafted: jpg, eps and dxf; choosing artboards, the selection and the crop; the main PDF options (presets, PDF/X, compatibility, bleed, printer's marks, outlined text) with `pdf.preset.*` opened; a download URL per file when an export writes several; and `inspect_upload` built on `document.pdfInfo`. The engine's `document.export` already takes all of these, so no closed command would have to be opened for them.
+
+The project owner judged these not much needed by the server, and the extension is not made for now (design policy section 4.7):
+
+- ArtServer is for having an AI make art within an organization; finishing files for print is a designer's work in Illustrator, which the `.ai` and PDF exports already serve. EPS and DXF have few uses.
+- Open commands cover the common needs: `artboard.reorder` to export another artboard as PNG, `artboard.fitToSelection` to export only some art, `document.setup` for the bleed.
+- Every option added to a tool is sent to the AI with its description on every call, costing context and giving it more to choose wrongly from.
+
+The closed exports and their setup stay closed; what real use shows to be missing is added then, and only that.
+
+### What was done
+
+- Design policy section 4.7 and chapter 11 (the command opening is done; the extension is not made for now).
+
+### Next steps
+
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): real .ai and PDF exports, whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
