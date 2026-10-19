@@ -245,7 +245,7 @@ The MVP assumes "trusted users and local use", and **states these clearly as kno
 - Copy VectorCraft's `[patch.crates-io]` (krilla / hayro-syntax / hayro-interpret / hayro-jbig2, rev `ca50d63…`) into ArtServer's root `Cargo.toml`.
 - Also copy the profile setting that builds dependency crates at opt-level 2.
 - Start `Cargo.lock` from VectorCraft's.
-- When bumping the VectorCraft rev, first sync the patch and lockfile and make the tests pass. Check in CI that the PDF backend is the patched version (equivalent to VectorCraft's `xtask/src/pdf_deps.rs`).
+- When bumping the VectorCraft rev, first sync the patch and lockfile and make the tests pass. Check in CI that the PDF backend is the patched version (equivalent to VectorCraft's `xtask/src/pdf_deps.rs`). → A test does it instead, since 2026-10-19 (`tests/pdf_backend.rs`; design policy chapter 8).
 - If you need to try a locally modified VectorCraft, switch to a path dependency through local settings that are not committed.
 
 ---

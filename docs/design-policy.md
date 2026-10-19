@@ -33,6 +33,7 @@
   - 2026-10-19 Decided not to extend `export_document` with the closed exports' features for now (section 4.7; chapter 11)
   - 2026-10-19 Decided not to work on CJK fonts on Linux for now (section 7.3; chapter 11; section 13.2)
   - 2026-10-19 The time limit counts from when a request starts, and waiting to start has a limit of its own (sections 5.1, 5.3)
+  - 2026-10-19 A test, not CI, checks that the PDF backend is the fixed version (chapter 8)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -490,7 +491,7 @@ If method 2 is chosen, the embedded fonts become fonts that ArtServer distribute
   - `[patch.crates-io]` (replaces the PDF backend krilla / hayro-* with the fixed versions from craft-libs)
   - Profile settings that build dependency crates with optimization
 - `Cargo.lock` starts from VectorCraft's.
-- When updating VectorCraft, sync the patches and the lockfile, and get the tests passing before updating. CI checks that the PDF backend is the fixed version. Tests also check changes in the arguments and behavior of VectorCraft's tools, and that every id in the allowlist exists.
+- When updating VectorCraft, sync the patches and the lockfile, and get the tests passing before updating. A test checks that the PDF backend is the fixed version (`tests/pdf_backend.rs`): in `Cargo.lock`, krilla and hayro-syntax / hayro-interpret / hayro-jbig2 each resolve once, from the craft-libs revision craft-pdf comes from. If `[patch.crates-io]` stops applying, Cargo only warns and takes the crates.io versions, which lack the limits on broken PDFs; craft-pdf refuses to build with an unfixed krilla, but nothing else stops an unfixed reader. CI only builds (with `--locked`), so the test runs when the tests are run locally. Tests also check changes in the arguments and behavior of VectorCraft's tools, and that every id in the allowlist exists.
 - To try local modifications to VectorCraft, switch to a path dependency with local settings that are not committed.
 - **When fixing a VectorCraft bug in ArtServer** (agreed with the project owner on 2026-10-18): copy only the affected crate into `vendor/`, fix it there, and replace the original with `[patch."https://github.com/storytold/vectorcraft"]` in `Cargo.toml`.
   - Copy from the same commit that ArtServer references. VectorCraft's crates call each other's internal functions, so the build fails if the commits differ.

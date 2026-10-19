@@ -279,7 +279,7 @@ A client that can't run commands, such as Claude Desktop, can give you the URL i
 cargo test
 ```
 
-This runs the unit tests and the end-to-end tests, which connect an MCP client to a server that is actually listening.
+This runs the unit tests and the end-to-end tests, which connect an MCP client to a server that is actually listening. It also checks in `Cargo.lock` that PDF reading and writing use the fixed versions of their libraries from craft-libs, which `[patch.crates-io]` in `Cargo.toml` selects ([design policy, chapter 8](docs/design-policy.md)).
 
 ## Dependency licenses and vulnerabilities
 

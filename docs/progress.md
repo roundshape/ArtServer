@@ -883,3 +883,28 @@ Of three options (A: separate the wait from the run, with the same length for bo
 `docs/architecture.md` is the Phase 0 investigation record. Its findings are kept as they were, and what was verified or decided later is added after "→" with its date: the nine open issues of chapter 6 (all settled), Rust installed, the license check, the build without `[patch.crates-io]` (not tried; the patch is copied), the use of `vectorcraft-mcp`'s tool part, and the VectorCraft commit now referenced.
 
 - The build size was measured for the first time: `target/` is 11 GB (`du -sh`), against "a few GB" expected in Phase 0. It holds only debug builds, made over and over with tests and clippy; a clean build and a release build were not measured.
+
+## 2026-10-19 A test checks that the PDF backend is the fixed version
+
+### Policy
+
+Design policy chapter 8 said that CI checks that the PDF backend is the fixed version, but CI only runs `cargo build --locked`, and nothing checked it. The fixed versions come from craft-libs through `[patch.crates-io]` in `Cargo.toml`, since Cargo doesn't carry VectorCraft's over. If that stops applying, say after VectorCraft moves to another craft-libs revision, Cargo only warns and takes the crates.io versions, which lack the limits on broken PDFs (nesting depth, decode limits, the page tree's work budget, no partial documents). VectorCraft's code was read on this: craft-pdf refuses to build with an unfixed krilla (the writer; `crates/pdf/src/write.rs:12` in craft-libs `ca50d63` reads a constant only the fixed krilla has), but nothing stops an unfixed reader (hayro-syntax, hayro-interpret, hayro-jbig2). VectorCraft checks this with `cargo xtask pdf-deps`.
+
+Of three options (A: correct the design policy and check `Cargo.lock` by hand when updating VectorCraft; B: a test; C: a step in CI), the project owner chose B. Updating VectorCraft always goes through the tests, and the other checks of a VectorCraft update are tests too. The test compares with the revision craft-pdf comes from, not with a revision written in the test, so it needs no change when VectorCraft is updated.
+
+### What was done
+
+- `tests/pdf_backend.rs` (new): reads `Cargo.lock` and checks that craft-pdf comes from craft-libs and that krilla, hayro-syntax, hayro-interpret and hayro-jbig2 each resolve once, from the same source. A second test feeds it made-up lockfiles: each crate from crates.io, from another revision, twice, or missing, and craft-pdf from crates.io, are all refused. No dependency was added.
+- Design policy chapter 8, README (both languages), and the Phase 0 recommendation in `docs/architecture.md` section 4.5.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 79 passed (55 unit, 22 E2E, 2 for the PDF backend) |
+| The test against changed copies of `Cargo.lock` (hayro-syntax from crates.io; krilla from another craft-libs revision) | Both failed, naming the crate and the source found. The test was then put back to read `Cargo.lock` |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+### Next steps
+
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
