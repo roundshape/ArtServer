@@ -543,6 +543,63 @@ async fn the_fourth_batch_of_document_commands_works_through_command_run() {
 }
 
 #[tokio::test]
+async fn text_styles_work_through_command_run() {
+    // Character and paragraph styles (docs/design-policy.md section 4.7), run as the AI runs them
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(&client, "document_new", json!({"session": session, "width": 300, "height": 200})).await);
+    let text = call(
+        &client,
+        "add_text",
+        json!({"session": session, "text": "Heading", "x": 20, "y": 60, "size": 12}),
+    )
+    .await;
+    let id = json_of(&text)["id"].as_u64().unwrap();
+    let run = |kind: &str, verb: &str, params: Value| {
+        let args = json!({"session": session, "id": format!("{kind}.{verb}"), "params": params});
+        let client = &client;
+        async move { call(client, "command_run", args).await }
+    };
+
+    for (kind, first, second) in [
+        ("charStyle", json!({"size": 24.0}), json!({"size": 30.0})),
+        ("paraStyle", json!({"space_after": 8.0}), json!({"space_after": 12.0})),
+    ] {
+        assert_eq!(json_of(&run(kind, "new", json!({"name": "Head", "attrs": first})).await)["name"], "Head");
+        let applied = json_of(&run(kind, "apply", json!({"name": "Head", "id": id})).await);
+        assert!(applied["count"].as_u64().unwrap() >= 1, "{kind}: {applied}");
+        // Changing the style reaches the text that uses it
+        succeeded(&run(kind, "setAttrs", json!({"name": "Head", "attrs": second})).await);
+        succeeded(&run(kind, "redefine", json!({"name": "Head", "id": id})).await);
+        let copy = json_of(&run(kind, "duplicate", json!({"name": "Head"})).await)["name"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        succeeded(&run(kind, "rename", json!({"name": copy, "to": "Spare"})).await);
+        succeeded(&run(kind, "delete", json!({"name": "Spare"})).await);
+
+        let list = json_of(&run(kind, "list", json!({})).await);
+        let styles = list["styles"].as_array().unwrap();
+        let head = styles.iter().find(|s| s["name"] == "Head").unwrap_or_else(|| panic!("{kind}: {list}"));
+        assert!(head["uses"].as_u64().unwrap() >= 1, "{kind}: {head}");
+        let (key, value) = second.as_object().unwrap().iter().next().unwrap();
+        assert_eq!(head["attrs"][key], *value, "{kind}: {head}");
+        assert!(!styles.iter().any(|s| s["name"] == "Spare"), "{kind}: {list}");
+
+        // Unknown attributes are refused
+        let bad = run(kind, "new", json!({"name": "Bad", "attrs": {"no_such_attribute": 1}})).await;
+        assert_eq!(bad.is_error, Some(true), "{kind}: {bad:?}");
+    }
+    let svg = text_of(&call(&client, "export_document", json!({"session": session, "format": "svg"})).await);
+    assert!(svg.contains("font-size=\"30\"") || svg.contains("font-size:30"), "{svg}");
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
 async fn unknown_sessions_and_unknown_arguments_are_refused() {
     let base = start(Limits::default()).await;
     let client = client(&base, TOKEN).await;

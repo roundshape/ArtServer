@@ -675,6 +675,24 @@ const SHARED: &[&str] = &[
     "svgInteractivity.clearEvents",
     "svgInteractivity.info",
     "svgInteractivity.removeEvent",
+    // Character and paragraph styles (2026-10-19): kept in the document. The engine builds their ids with concat!,
+    // not cmd!, so the inventory that read the cmd! declarations missed them (docs/design-policy.md section 4.7)
+    "charStyle.apply",
+    "charStyle.delete",
+    "charStyle.duplicate",
+    "charStyle.list",
+    "charStyle.new",
+    "charStyle.redefine",
+    "charStyle.rename",
+    "charStyle.setAttrs",
+    "paraStyle.apply",
+    "paraStyle.delete",
+    "paraStyle.duplicate",
+    "paraStyle.list",
+    "paraStyle.new",
+    "paraStyle.redefine",
+    "paraStyle.rename",
+    "paraStyle.setAttrs",
 ];
 
 /// Formats allowed for export.

@@ -953,3 +953,30 @@ The project owner decided that switching color settings per job (design policy s
 The project owner decided that returning an export's download URL as an MCP resource link (design policy section 13.2 #11; a `resource_link` block in the tool result, which tells the client app that it is a file) waits; it was listed for Phase 2. Today the URL is in the tool's JSON result (`src/tools.rs`, `deposit`), and with Claude Code the AI saves the file with curl (verified 2026-10-18). Claude Code's MCP documentation and changelog were searched, and nothing was found on how it handles a resource link: whether it shows the model the URI, fetches the file itself, or shows the user a link. The MCP specification lets a client fetch one with `resources/read`, which ArtServer doesn't implement. A resource link might help clients that can't run curl; it would be tried when such a client is needed.
 
 - Design policy sections 4.6 and 13.2 #11.
+
+## 2026-10-19 Counting the commands at runtime, and opening the text styles
+
+### Policy
+
+Design policy section 13.2 #12 listed as not yet verified the count of the engine's commands, about 760, counted from the source. The engine lists its commands in `vectorcraft_engine::command_specs()`, and a throwaway test (deleted) counted 779 there, 161 of them read only, in 62 namespaces, against the 763, 159 and 60 of the inventory behind the four batches. The 16 missing are the character and paragraph styles (`charStyle.*` and `paraStyle.*`: `list`, `new`, `apply`, `redefine`, `setAttrs`, `duplicate`, `rename`, `delete`): `crates/engine/src/cmd/textstyles.rs` builds their ids with `concat!` in a macro of its own, and its comment says why ("the `cmd!` macro wants literals"), so reading the `cmd!` declarations didn't find them. They were closed, as everything off the allowlist is, but had never been classified. All 594 allowlisted ids exist at runtime.
+
+Their code was read: the styles are kept in the document (`char_styles` / `para_styles` of `Document`), they take the attributes `text.setStyle` / `text.setFormat` take (both open) and refuse unknown ones, and they touch no files and no process-wide state; the two `FontDb::global().add_font` calls in the file are in its tests. The project owner agreed to open all 16. Illustrator reads only the PDF part of an `.ai`, so the styles most likely don't show in its Styles panels (not tried).
+
+### What was done
+
+- `src/policy.rs`: the 16 commands, with why the inventory missed them; the allowlist has 610.
+- `tests/e2e.rs`: `text_styles_work_through_command_run`, for both kinds: a style is made, applied to a text, changed with `setAttrs` and taken from the text with `redefine`, duplicated, renamed and deleted; `list` shows it in use with the new attribute and without the deleted copy, and an unknown attribute is refused. The exported SVG has the character style's size (30, against the text's own 12).
+- Design policy section 4.7, chapter 11 and section 13.2 #12.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| A throwaway test counting `command_specs()` and comparing the ids with the `cmd!` declarations (deleted) | 779 at runtime, 763 declared with `cmd!`; the 16 others are `charStyle.*` and `paraStyle.*`; no declared id is missing at runtime |
+| `cargo test --offline --locked` | All 81 passed (55 unit, 24 E2E, 2 for the PDF backend) |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes, after `cargo fmt` reflowed the new test |
+
+### Next steps
+
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
+2. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)
