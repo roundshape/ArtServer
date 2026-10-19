@@ -35,6 +35,7 @@
   - 2026-10-19 The time limit counts from when a request starts, and waiting to start has a limit of its own (sections 5.1, 5.3)
   - 2026-10-19 A test, not CI, checks that the PDF backend is the fixed version (chapter 8)
   - 2026-10-19 Verified older clients (2025-06-18, 2025-11-25) with an E2E test; recorded that no test covers the 2026-07-28 version (sections 4.4, 13.2)
+  - 2026-10-19 Decided not to support Docker (chapter 11; sections 12.1, 12.6)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -553,7 +554,7 @@ TLS (terminated at a reverse proxy), multiple users and permission management, p
 | 0 | Investigation of VectorCraft, choice of approach | Done (Option A-2 adopted) |
 | 1 | MVP (chapter 10) | Done (implemented 2026-10-17; connection from Claude Code verified 2026-10-18; `cargo deny` / `cargo about` introduced). Items not yet verified are in section 13.2 |
 | 2 | Feature expansion and compatibility verification (CJK fonts such as Japanese, images, layers, transparency, path operations, verification with real files). Process isolation is not built first (revisit if a condition in section 12.4 applies) | In progress (since 2026-10-18). Done: VectorCraft's tools through GuardedBackend (section 4.7), text and fonts (`list_fonts`, `--font-dirs`), the fix for the weights of Japanese fonts in SVG (chapter 8), URL delivery of exports (section 4.6), upload for import (opening PDF, .ai, SVG, PNG, JPEG and .vectorcraft, and placing images; section 4.6), `.ai` and `.vectorcraft` export (section 4.6), opening the commands (section 4.7; four batches, 594 commands; `export_document` is not extended for now). Remaining: verification with real files. Not done for now: CJK fonts on Linux (section 7.3) |
-| 3 | Productization (REST API, multiple users, process isolation (chapter 12), job persistence, Docker, monitoring, threat analysis and load tests) | Not started |
+| 3 | Productization (REST API, multiple users, process isolation (chapter 12), job persistence, monitoring, threat analysis and load tests). Not supported: Docker (decided by the project owner on 2026-10-19); no Dockerfile or container image is provided | Not started |
 
 ---
 
@@ -573,7 +574,7 @@ Not implemented in Phases 1 and 2. This chapter summarizes the policy and what t
 | Startup, memory and operating cost | Low | High |
 
 - **Separating processes alone does not make it safe.** Design per-worker OS privileges, working directories, file access, CPU and memory limits, and network restrictions together.
-- Isolation by OS process and Docker containers are different things. Containers are an option for distribution, operation and additional isolation, and are not required from the start.
+- Isolation by OS process and Docker containers are different things. ArtServer does not support Docker (2026-10-19, chapter 11), and process isolation is designed without it.
 
 ### 12.2 Basic structure
 
@@ -632,7 +633,7 @@ When migrating, test with emphasis on "the front end keeps running when a worker
 4. Per-process initialization cost of fonts, settings and shared resources, and explicit memory limit settings
 5. Policy for persisting and recovering document state (whether to promise resumption after abnormal termination)
 6. Monitoring, logs, metrics, backpressure, limits on concurrent processing
-7. OS-level isolation in production environments such as Linux. Compare containers too if needed
+7. OS-level isolation in production environments such as Linux (Docker is not supported; chapter 11)
 
 ---
 

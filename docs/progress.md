@@ -935,3 +935,9 @@ Reading this showed that rmcp's client, which the other E2E tests use, also star
 
 1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
 2. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata), with rmcp's client in its discover mode (`ClientLifecycleMode::Discover`) or by hand
+
+## 2026-10-19 Not supporting Docker
+
+The project owner decided that ArtServer doesn't support Docker: no Dockerfile or container image is provided, and Docker is no longer part of Phase 3. Process isolation (design policy chapter 12) doesn't depend on it, since isolation by OS process and Docker containers are different things (section 12.1).
+
+- Design policy chapter 11 (Phase 3) and sections 12.1 and 12.6; `docs/DEVELOPMENT_PLAN.md` sections 2 and 5 (the decision added after "→"). The external review `docs/ARTSERVER_PROCESS_ISOLATION_REVIEW.md` is left as written.

@@ -40,7 +40,7 @@ Basic principles:
 - Stronger compatibility with PDF / PDF-compatible AI / SVG and others. **Full compatibility with Adobe native `.ai` is not guaranteed**.
 - REST API and SDK, integration with external applications.
 - Multiple users, document isolation per user/session, authentication and authorization.
-- Job queue, asynchronous batches, bulk rendering, monitoring, container distribution.
+- Job queue, asynchronous batches, bulk rendering, monitoring, container distribution. → Container distribution (Docker) is not done (2026-10-19, design policy chapter 11).
 - Expansion into figures, print data and automated typesetting linked to databases and CSV.
 
 ## 3. Investigate the existing VectorCraft first
@@ -130,7 +130,7 @@ Compare the implementation options and record the reasons.
 ### Phase 3 — Turning the server into a product
 
 - REST API, multiple users, authorization, persistence of sessions and jobs.
-- Asynchronous batch processing, monitoring, logging, Docker, production deployment on Linux.
+- Asynchronous batch processing, monitoring, logging, Docker, production deployment on Linux. → Docker is not supported (2026-10-19, design policy chapter 11).
 - Threat analysis, load testing and license/trademark checks before external release.
 
 ## 6. Security requirements
