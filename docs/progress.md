@@ -670,3 +670,9 @@ The project owner chose options A and B from the check entry above: mark the bun
 ### Next steps
 
 1. Check from Claude Code in a new conversation, with real `.ai` and PDF files (including whether the AI avoids the `bundled` fonts)
+
+## 2026-10-19 Telling the AI to close working sessions
+
+- `src/tools.rs`: the server description and the `session_close` description now tell the AI to call `session_close` when the work is done, and only once the user has the files they need, since closing discards the documents, exports and uploads and makes the download URLs stop working. Without this, working sessions mostly ended by idle disposal (30 minutes) and counted toward the limit of 8 until then (found in the review of concurrency and sessions above).
+- `cargo test --offline --locked`: all 64 passed (46 unit, 18 E2E). `cargo clippy` / `cargo fmt --check`: no warnings / no changes.
+- Not yet verified: whether the AI follows it (part of the check from Claude Code).

@@ -48,7 +48,10 @@ come back as a download URL valid for a few minutes: open it in a browser or fet
 `curl -o out.pdf <url>`); no token is needed, and anyone with the URL can download the file until it expires. To use a \
 file the user has (PDF, .ai, SVG, PNG, JPEG or .vectorcraft), call upload_create, send the file to the returned URL with an HTTP PUT \
 (for example `curl -T logo.png '<url>'`) or ask the user to open the URL in a browser, then open it as a document with \
-open_upload or put it into the active document with place_upload.";
+open_upload or put it into the active document with place_upload. When the work is done, call session_close: the server \
+holds only a few sessions at a time, and an open one keeps its place until it has been idle for a while (30 minutes by \
+default). Closing discards the session's documents and makes its download URLs stop working, so close it once the user \
+has the files they need.";
 
 /// The VectorCraft tools ArtServer publishes (docs/design-policy.md section 4.7).
 const VECTORCRAFT_TOOLS: &[&str] = &[
@@ -421,7 +424,11 @@ impl ArtServer {
         })
     }
 
-    #[tool(description = "Close a working session and discard its documents.")]
+    #[tool(
+        description = "Close a working session when the work is done, to free its place on the server (it holds only a few \
+at a time). Its documents, exports and uploads are discarded and its download URLs stop working, so close it once the user \
+has the files they need."
+    )]
     async fn session_close(&self, Parameters(a): Parameters<SessionArgs>, Extension(parts): Extension<Parts>) -> Result<CallToolResult, ErrorData> {
         let owner = principal(&parts)?;
         self.sessions.close(&a.session, &owner).map_err(session_error)?;
