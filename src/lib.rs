@@ -6,6 +6,7 @@ mod backend;
 pub mod config;
 pub mod engine_host;
 pub mod files;
+mod fonts;
 pub mod policy;
 pub mod session;
 pub mod tools;

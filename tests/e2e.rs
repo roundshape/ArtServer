@@ -231,6 +231,16 @@ async fn fonts_can_be_listed_and_filtered() {
     );
     let styles = call(&client, "list_fonts", json!({"session": session, "family": "Inter"})).await;
     assert!(!ok(&styles)["styles"].as_array().unwrap().is_empty());
+
+    // Built-in families that the OS lacks are marked, in the list and for one family alike. Whether Inter is
+    // among them depends on whether the machine has it installed
+    let bundled = ok(&fonts)["bundled"].as_array().unwrap().clone();
+    assert!(bundled.iter().all(|b| families.contains(b)), "{bundled:?} {families:?}");
+    let inter_bundled = bundled.iter().any(|b| b == "Inter");
+    assert_eq!(ok(&styles)["bundled"], inter_bundled);
+    let all = call(&client, "list_fonts", json!({"session": session})).await;
+    let all_bundled = ok(&all)["bundled"].as_array().unwrap().clone();
+    assert!(all_bundled.len() <= 4 && all_bundled.len() >= bundled.len(), "{all_bundled:?}");
     let _ = client.cancel().await;
 }
 

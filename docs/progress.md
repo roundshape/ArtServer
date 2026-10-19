@@ -646,3 +646,27 @@ The project owner cleared `~/Desktop/artserver-output/`, and the checks were run
 
 1. Decide how to handle the bundled fonts (options A, B, C in the check entry above)
 2. Check from Claude Code in a new conversation, with real `.ai` and PDF files
+
+## 2026-10-19 Marking the bundled fonts (options A and B)
+
+### Policy
+
+The project owner chose options A and B from the check entry above: mark the bundled fonts in `list_fonts`, and tell the AI in the server description. Option C (changing the default font) was left for later. Design policy section 7.4.
+
+### What was done
+
+- `src/fonts.rs` (new): the families built into the program and not installed on the OS. The built-in families come from a font database without font folders, which holds only those, so nothing is hard-coded; a built-in family counts as installed when some style of it is read from a font file (the OS or `--font-dirs`). Worked out once, on a blocking thread.
+- `src/tools.rs`: `list_fonts` adds `bundled`, the listed families that are built in only (after `query`), or, with `family`, whether that family is. The tool description and the server description tell the AI to use installed families for files people will edit, and to name a font for every text (text without one is set in the built-in Source Sans 3).
+- README (English and Japanese) and design policy section 7.4.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 64 passed (46 unit, 18 E2E). New: the built-in families are VectorCraft's four, nothing counts as installed without font files (unit); `bundled` names only listed families and agrees with the answer for one family (E2E) |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+| `list_fonts` on this Mac | 379 families; `bundled`: Inter, Source Sans 3, Source Serif 4. JetBrains Mono is not marked because it is installed in `~/Library/Fonts`; Helvetica Neue and Hiragino Sans are not marked |
+
+### Next steps
+
+1. Check from Claude Code in a new conversation, with real `.ai` and PDF files (including whether the AI avoids the `bundled` fonts)

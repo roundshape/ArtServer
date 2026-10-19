@@ -23,6 +23,7 @@
   - 2026-10-19 Implemented upload for import, and recorded the idea of a server-side image library (sections 4.6, 4.7, 6.3, 12.4, 13.2; chapter 11)
   - 2026-10-19 Added `.ai` (PDF-compatible only) and `.vectorcraft` export, and `.vectorcraft` upload (section 4.6; chapter 11)
   - 2026-10-19 Write `.ai` without PDF layers, after checking in Illustrator (section 4.6)
+  - 2026-10-19 Mark the bundled fonts in `list_fonts`, and tell the AI to prefer installed fonts (section 7.4)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -458,6 +459,7 @@ If method 2 is chosen, the embedded fonts become fonts that ArtServer distribute
 - The operator checks the licenses of the fonts installed on the server (section 1.1). As a reference for operators: commercial fonts (such as Morisawa) often need a separate license for server use or PDF embedding.
 - There is one font DB per process. The available fonts cannot be split per session.
 - If a font the AI specifies is not on the server, a fallback font is used. Make it possible to know and expose which fonts are installed on the server.
+- **The bundled fonts (2026-10-19, agreed with the project owner)**: ArtServer has VectorCraft's bundled Latin fonts (Source Sans 3, Source Serif 4, Inter, JetBrains Mono) built into the program, and the default for text without a font is Source Sans 3. Files using them look right anywhere (the glyphs are embedded), but people editing the text in another app such as Illustrator usually lack the font. So `list_fonts` marks as `bundled` the built-in families that the server's OS doesn't have installed (worked out from the font files: a built-in family that is also installed is not marked), and the server description tells the AI to use installed families for files people will edit and to name a font for every text. Changing the default font (it would differ per OS) and leaving the bundled fonts out of the build (text could not be drawn on servers without fonts) were not chosen.
 
 ---
 

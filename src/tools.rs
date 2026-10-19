@@ -30,6 +30,7 @@ use vectorcraft_mcp::ToolResult;
 use crate::auth::Principal;
 use crate::engine_host::{HostError, Step};
 use crate::files::{FileStore, StoredFile, base_url, file_name};
+use crate::fonts;
 use crate::session::{SessionError, Sessions};
 use crate::uploads::{self, Format};
 
@@ -39,7 +40,10 @@ to every other tool. Create a document with document_new (or import_svg), draw a
 result with doc_inspect or render_preview, then export_document. For anything else, find a command with command_list \
 and run it with command_run (or several with command_batch); only the commands command_list shows are available. \
 Pass object ids explicitly as `ids` rather than relying on the selection. Coordinates are in points (1/72 inch), \
-origin at the artboard's top-left, y down. list_fonts tells which font families this server has. Large exports \
+origin at the artboard's top-left, y down. list_fonts tells which font families this server has; its `bundled` ones are \
+built into this server and not installed on its OS, so people who edit an exported file in another app (such as \
+Illustrator) usually lack them. For files people will edit, use installed families, and name a font for every text, \
+since text without one is set in the built-in Source Sans 3. Large exports \
 come back as a download URL valid for a few minutes: open it in a browser or fetch it with an HTTP GET (for example \
 `curl -o out.pdf <url>`); no token is needed, and anyone with the URL can download the file until it expires. To use a \
 file the user has (PDF, .ai, SVG, PNG, JPEG or .vectorcraft), call upload_create, send the file to the returned URL with an HTTP PUT \
@@ -533,8 +537,11 @@ SVG or .vectorcraft file as one group. The file is embedded, never linked. Retur
     }
 
     #[tool(
-        description = "List the font families this server can use (bundled, installed on the server and from its configured font \
-folders), or the styles of one family. Use these names for add_text and text styles; a family the server lacks is drawn with a fallback font."
+        description = "List the font families this server can use (built into it, installed on the server and from its \
+configured font folders), or the styles of one family. Use these names for add_text and text styles; a family the server \
+lacks is drawn with a fallback font. `bundled` names the families built into this server and not installed on its OS: \
+people who edit an exported file in another app, such as Illustrator, usually lack them, so prefer installed families \
+for files people will edit."
     )]
     async fn list_fonts(
         &self,
@@ -543,20 +550,30 @@ folders), or the styles of one family. Use these names for add_text and text sty
         ct: CancellationToken,
     ) -> Result<CallToolResult, ErrorData> {
         let mut params = json!({});
-        insert_opt(&mut params, "family", a.family.map(Value::from));
+        insert_opt(&mut params, "family", a.family.clone().map(Value::from));
         let mut results = match self.exec(&parts, &a.session, vec![Step::new("text.fontList", params)], &ct).await? {
             Ok(results) => results,
             Err(e) => return Ok(e),
         };
+        // Worked out once, reading font files, so off the async threads
+        let bundled = tokio::task::spawn_blocking(fonts::bundled_only)
+            .await
+            .map_err(|e| ErrorData::internal_error(format!("cannot list the built-in fonts: {e}"), None))?;
+        let is_bundled = |family: &str| bundled.iter().any(|b| b.eq_ignore_ascii_case(family));
         let mut out = results.pop().unwrap_or(Value::Null);
-        if let Some(o) = out.as_object_mut()
-            && let Some(Value::Array(families)) = o.get_mut("families")
-        {
+        let Some(o) = out.as_object_mut() else {
+            return Ok(CallToolResult::structured(out));
+        };
+        if let Some(Value::Array(families)) = o.get_mut("families") {
             if let Some(q) = a.query.map(|q| q.to_lowercase()) {
                 families.retain(|f| f.as_str().is_some_and(|n| n.to_lowercase().contains(&q)));
             }
+            let shown: Vec<Value> = families.iter().filter(|f| f.as_str().is_some_and(is_bundled)).cloned().collect();
             let count = families.len();
             o.insert("count".to_string(), Value::from(count));
+            o.insert("bundled".to_string(), Value::Array(shown));
+        } else if let Some(family) = &a.family {
+            o.insert("bundled".to_string(), Value::Bool(is_bundled(family)));
         }
         Ok(CallToolResult::structured(out))
     }
