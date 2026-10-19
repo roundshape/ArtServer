@@ -14,8 +14,8 @@ A headless vector graphics server that AI agents operate over the network throug
 - Place text (Japanese, vertical type, area type, type on a path). List the available fonts
 - Move, rotate, scale, reflect and shear; combine shapes (Pathfinder); graphs; text wrap
 - Find and run the allowed engine commands (`command_list` / `command_run` / `command_batch`)
-- Import SVG, and open or place files sent through an upload URL (PDF, Illustrator .ai, SVG, PNG, JPEG)
-- Export as SVG, PDF and PNG (small SVG and PNG come back in the reply; PDF and larger files come back as a download URL). Return preview images
+- Import SVG, and open or place files sent through an upload URL (PDF, Illustrator .ai, SVG, PNG, JPEG, VectorCraft .vectorcraft)
+- Export as SVG, PDF, PNG, Illustrator .ai (PDF compatible) and VectorCraft .vectorcraft (small SVG and PNG come back in the reply; the other formats and larger files come back as a download URL). Return preview images
 - Undo / redo
 
 ## Requirements
@@ -158,8 +158,8 @@ ArtServer publishes its own tools and VectorCraft's MCP tools. VectorCraft's too
 | `document_new` | Create a new document (with one artboard) |
 | `import_svg` | Open SVG markup as a new document (linked files are not read) |
 | `list_fonts` | List the available font families (filter with `query`). With `family`, list that family's styles |
-| `export_document` | Export as SVG, PNG or PDF. Small SVG (up to 32 KB) comes back as text and small PNG (up to 256 KB) as an image. PDF and larger files come back as a URL to fetch them from ([Receiving large exports](#receiving-large-exports)). `delivery` chooses how the result is returned (`inline` returns PDF as Base64 too) |
-| `upload_create` | Make a URL to send a file to (PDF, Illustrator `.ai` saved with PDF compatibility, SVG, PNG or JPEG). Send the file with an HTTP PUT, or open the URL in a browser ([Sending files to ArtServer](#sending-files-to-artserver)) |
+| `export_document` | Export as SVG, PNG, PDF, Illustrator `.ai` or VectorCraft `.vectorcraft`. Small SVG (up to 32 KB) comes back as text and small PNG (up to 256 KB) as an image. PDF, `.ai`, `.vectorcraft` and larger files come back as a URL to fetch them from ([Receiving large exports](#receiving-large-exports)). `delivery` chooses how the result is returned (`inline` returns the binary formats as Base64 too). The `.ai` is saved with PDF compatibility: Illustrator opens it as PDF artwork (one clipped group per page), while ArtServer and VectorCraft open it fully editable |
+| `upload_create` | Make a URL to send a file to (PDF, Illustrator `.ai` saved with PDF compatibility, SVG, PNG, JPEG or VectorCraft `.vectorcraft`). Send the file with an HTTP PUT, or open the URL in a browser ([Sending files to ArtServer](#sending-files-to-artserver)) |
 | `open_upload` | Open a sent file as a new document. A PDF exported by ArtServer opens as the document it was |
 | `place_upload` | Place a sent file into the active document (embedded), at a point or fitted into a rectangle |
 
@@ -244,10 +244,10 @@ curl -T logo.png "http://127.0.0.1:8471/uploads/4ea8…"
 
 A client that can't run commands, such as Claude Desktop, can give you the URL instead: open it in a browser, choose the file and press Send. Then the AI calls `open_upload` to open the file as a new document, or `place_upload` to put it into the active document.
 
-- Accepted formats: PDF (including Illustrator `.ai` files saved with PDF compatibility), SVG, PNG and JPEG. The format is told from the file's contents, not from its name.
+- Accepted formats: PDF (including Illustrator `.ai` files saved with PDF compatibility), SVG, PNG, JPEG and VectorCraft `.vectorcraft`. The format is told from the file's contents, not from its name.
 - A URL takes one file, up to `--max-upload-mib` (64 MiB by default), and expires like exports (10 minutes by default). Only the working session that made it can use the file, and closing the session discards it. No token is needed: as with download URLs, anyone who knows the URL can send a file to it until then.
 - The file is passed to the engine as data, never as a path, and placed files are embedded.
-- **Saving and resuming:** a PDF exported by ArtServer carries the document's editing data. Send it back and open it with `open_upload`, and the document comes back as it was, ready to edit.
+- **Saving and resuming:** a `.vectorcraft` file is the document itself, and a PDF or `.ai` exported by ArtServer carries the document's editing data. Send one back and open it with `open_upload`, and the document comes back as it was, ready to edit.
 
 ## Security
 

@@ -42,7 +42,7 @@ Pass object ids explicitly as `ids` rather than relying on the selection. Coordi
 origin at the artboard's top-left, y down. list_fonts tells which font families this server has. Large exports \
 come back as a download URL valid for a few minutes: open it in a browser or fetch it with an HTTP GET (for example \
 `curl -o out.pdf <url>`); no token is needed, and anyone with the URL can download the file until it expires. To use a \
-file the user has (PDF, .ai, SVG, PNG or JPEG), call upload_create, send the file to the returned URL with an HTTP PUT \
+file the user has (PDF, .ai, SVG, PNG, JPEG or .vectorcraft), call upload_create, send the file to the returned URL with an HTTP PUT \
 (for example `curl -T logo.png '<url>'`) or ask the user to open the URL in a browser, then open it as a document with \
 open_upload or put it into the active document with place_upload.";
 
@@ -74,7 +74,7 @@ const MAX_PNG_SCALE: f64 = 16.0;
 
 /// With delivery auto, the largest result put in the reply (docs/design-policy.md section 4.6). It goes into
 /// the AI's conversation as is, so text is kept well below what reaches Claude Code (about 25,000 tokens).
-/// PDF is always a URL, because the AI can't read it.
+/// PDF, .ai and .vectorcraft are always a URL, because the AI can't read them.
 const INLINE_SVG_BYTES: usize = 32 * 1024;
 const INLINE_PNG_BYTES: usize = 256 * 1024;
 
@@ -196,6 +196,8 @@ pub enum ExportFormat {
     Svg,
     Pdf,
     Png,
+    Ai,
+    Vectorcraft,
 }
 
 impl ExportFormat {
@@ -204,6 +206,8 @@ impl ExportFormat {
             ExportFormat::Svg => "svg",
             ExportFormat::Pdf => "pdf",
             ExportFormat::Png => "png",
+            ExportFormat::Ai => "ai",
+            ExportFormat::Vectorcraft => "vectorcraft",
         }
     }
 
@@ -212,6 +216,8 @@ impl ExportFormat {
             ExportFormat::Svg => "image/svg+xml",
             ExportFormat::Pdf => "application/pdf",
             ExportFormat::Png => "image/png",
+            // No standard type: a generic one keeps browsers from renaming the downloaded file
+            ExportFormat::Ai | ExportFormat::Vectorcraft => "application/octet-stream",
         }
     }
 }
@@ -221,13 +227,15 @@ impl ExportFormat {
 pub struct ExportArgs {
     /// Session handle returned by session_create.
     pub session: String,
+    /// svg, pdf, png, ai (an Illustrator file saved with PDF compatibility: Illustrator opens it as PDF artwork, while
+    /// this server and VectorCraft open it fully editable) or vectorcraft (VectorCraft's native file).
     pub format: ExportFormat,
     /// PNG only: pixels per point (default 1, at most 16).
     pub scale: Option<f64>,
     /// SVG only: convert text to outlines so the file needs no fonts to display.
     pub outline_text: Option<bool>,
-    /// How to return the file: auto (default: SVG up to 32 KB and PNG up to 256 KB inline, PDF and anything larger
-    /// as a download URL), inline, or url.
+    /// How to return the file: auto (default: SVG up to 32 KB and PNG up to 256 KB inline; PDF, ai, vectorcraft and
+    /// anything larger as a download URL), inline, or url.
     pub delivery: Option<Delivery>,
 }
 
@@ -246,7 +254,7 @@ impl Delivery {
     fn inline(self, format: ExportFormat, bytes: usize) -> bool {
         match (self, format) {
             (Delivery::Inline, _) => true,
-            (Delivery::Url, _) | (Delivery::Auto, ExportFormat::Pdf) => false,
+            (Delivery::Url, _) | (Delivery::Auto, ExportFormat::Pdf | ExportFormat::Ai | ExportFormat::Vectorcraft) => false,
             (Delivery::Auto, ExportFormat::Svg) => bytes <= INLINE_SVG_BYTES,
             (Delivery::Auto, ExportFormat::Png) => bytes <= INLINE_PNG_BYTES,
         }
@@ -452,7 +460,7 @@ impl ArtServer {
 
     #[tool(
         description = "Get a URL to send a file to this server: PDF (including Illustrator .ai files saved with PDF \
-compatibility), SVG, PNG or JPEG. Send the file's raw bytes to it with an HTTP PUT (for example `curl -T logo.png '<url>'`), \
+compatibility), SVG, PNG, JPEG or VectorCraft (.vectorcraft). Send the file's raw bytes to it with an HTTP PUT (for example `curl -T logo.png '<url>'`), \
 or give the URL to the user to open in a browser and choose the file there. Then open it as a new document with open_upload, \
 or put it into the active document with place_upload, passing the returned `upload`. The URL takes one file and expires in \
 a few minutes; no token is needed."
@@ -503,8 +511,8 @@ a few minutes; no token is needed."
     }
 
     #[tool(
-        description = "Place a file sent through upload_create into the active document: an image as it is, or a PDF, .ai \
-or SVG as one group. The file is embedded, never linked. Returns the ids of what was placed and its size in points."
+        description = "Place a file sent through upload_create into the active document: an image as it is, or a PDF, .ai, \
+SVG or .vectorcraft file as one group. The file is embedded, never linked. Returns the ids of what was placed and its size in points."
     )]
     async fn place_upload(
         &self,
@@ -554,9 +562,10 @@ folders), or the styles of one family. Use these names for add_text and text sty
     }
 
     #[tool(
-        description = "Export the active document as SVG, PNG or PDF. Small SVG (up to 32 KB) comes back as text and small PNG \
-(up to 256 KB) as an image; PDF and larger files come back as a download URL valid for a few minutes, which a browser or an HTTP \
-GET can fetch without a token. `delivery` overrides the choice (inline returns PDF as base64)."
+        description = "Export the active document as SVG, PNG, PDF, Illustrator .ai (saved with PDF compatibility) or \
+VectorCraft (.vectorcraft). Small SVG (up to 32 KB) comes back as text and small PNG (up to 256 KB) as an image; PDF, .ai, \
+.vectorcraft and larger files come back as a download URL valid for a few minutes, which a browser or an HTTP GET can fetch \
+without a token. `delivery` overrides the choice (inline returns the binary formats as base64)."
     )]
     async fn export_document(
         &self,
@@ -565,6 +574,10 @@ GET can fetch without a token. `delivery` overrides the choice (inline returns P
         ct: CancellationToken,
     ) -> Result<CallToolResult, ErrorData> {
         let mut params = json!({"format": a.format.as_str()});
+        // Compressed native files are smaller, and VectorCraft opens them as it opens plain ones
+        if matches!(a.format, ExportFormat::Vectorcraft) {
+            insert_opt(&mut params, "compress", Some(Value::Bool(true)));
+        }
         if let Some(scale) = a.scale {
             if !matches!(a.format, ExportFormat::Png) {
                 return Err(ErrorData::invalid_params("scale applies to PNG only", None));
@@ -695,7 +708,7 @@ fn export_result(format: ExportFormat, mut r: Value) -> CallToolResult {
             None => return tool_error("the SVG export was not valid UTF-8".to_string()),
         },
         ExportFormat::Png => ContentBlock::image(data, "image/png"),
-        ExportFormat::Pdf => {
+        ExportFormat::Pdf | ExportFormat::Ai | ExportFormat::Vectorcraft => {
             return CallToolResult::structured(json!({
                 "format": format.as_str(),
                 "bytes": r.get("bytes").cloned(),

@@ -137,6 +137,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vectorcraft-engine",
+ "vectorcraft-format",
  "vectorcraft-mcp",
  "vectorcraft-render",
  "vectorcraft-text",

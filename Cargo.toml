@@ -14,6 +14,8 @@ vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "
 vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
 # Only the tool part of VectorCraft's MCP (call_tool and Backend; docs/design-policy.md section 4.7)
 vectorcraft-mcp = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+# The native .vectorcraft format, to tell uploaded files in it from their contents (src/uploads.rs)
+vectorcraft-format = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
 
 # MCP (the official Rust SDK). Pinned to the minor version, because the transport sometimes changes between minor versions
 rmcp = { version = "~3.5", features = ["server", "macros", "transport-streamable-http-server"] }

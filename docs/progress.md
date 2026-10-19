@@ -527,3 +527,35 @@ Started `target/debug/artserver`, drew a star, exported a PDF, sent it back with
 ### Next steps
 
 1. Check uploads from Claude Code and from a browser, with real `.ai` and PDF files
+
+## 2026-10-19 .ai and .vectorcraft export
+
+### Policy
+
+At the project owner's suggestion, added these before trying uploads from Claude Code, since both can be tested by sending the export back. The `.ai` is PDF-compatible only (the project owner's choice): VectorCraft can also write the legacy PostScript `.ai` (the Illustrator 7.0 format, the only one Adobe published), which Illustrator edits as objects, but it turns Japanese text into outlines and drops transparency, so it is not written. Design policy section 4.6.
+
+### What was done
+
+- `src/tools.rs`: `export_document` takes `ai` and `vectorcraft`. Both always come back as a URL (`delivery: inline` gives Base64) and download as `application/octet-stream`, so that browsers keep the file name. `.vectorcraft` files are written compressed. The tool descriptions say how Illustrator opens the `.ai`.
+- `src/policy.rs`: `ai` and `vectorcraft` are export formats; `aiVersion` other than `pdf` is refused; `.vectorcraft` data may be opened or placed.
+- `src/uploads.rs`: accepts `.vectorcraft`, told by VectorCraft's own test (`vectorcraft_format::sniff`). `vectorcraft-format` became a direct dependency at the same commit; it was already in `Cargo.lock` and in the license notices, so nothing new is built or listed.
+- `src/files.rs`: export file names drop a known file extension from the document title. The new E2E test found this: a document opened from `poster.ai` is titled `poster.ai`, so its export was named `poster.ai.vectorcraft`.
+- README (English and Japanese) and design policy (section 4.6, chapter 11).
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo build --all-targets --offline` | Succeeded. `Cargo.lock` changed by one line (ArtServer lists `vectorcraft-format`) |
+| `cargo test --offline --locked` | All 63 passed (45 unit, 18 E2E). New E2E test: export `.ai` and `.vectorcraft` (a URL, the file name, the content type, a PDF and a gzip stream inside), send each back and open it: the same format, no warnings, the colour kept, and the `.ai` restored from its editing data. Unit tests extended: the export formats and `aiVersion` in the allowlist, `.vectorcraft` told from its contents, file names from titles that end in an extension |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+
+### Not yet verified
+
+- Opening the exported `.ai` in Illustrator (VectorCraft's source says one clipped group per page)
+- Opening the exported `.vectorcraft` in the VectorCraft desktop app
+- Using uploads and the new formats from Claude Code and from a browser
+
+### Next steps
+
+1. Check uploads and the new export formats from Claude Code and from a browser, with real `.ai` and PDF files, and open the exported `.ai` in Illustrator

@@ -18,7 +18,7 @@ use serde_json::json;
 use crate::files::{self, FileStore, UploadError, file_name};
 
 /// The formats accepted, as the tools and the page describe them.
-pub const ACCEPTED: &str = "PDF (including Illustrator .ai files saved with PDF compatibility), SVG, PNG or JPEG";
+pub const ACCEPTED: &str = "PDF (including Illustrator .ai files saved with PDF compatibility), SVG, PNG, JPEG or VectorCraft (.vectorcraft)";
 
 /// How many leading bytes are searched for an SVG's root element.
 const SVG_SNIFF_BYTES: usize = 4096;
@@ -30,14 +30,20 @@ pub enum Format {
     Svg,
     Png,
     Jpeg,
+    /// VectorCraft's native file, compressed or not
+    Vectorcraft,
 }
 
 impl Format {
-    const ALL: [Format; 4] = [Format::Pdf, Format::Svg, Format::Png, Format::Jpeg];
+    const ALL: [Format; 5] = [Format::Pdf, Format::Svg, Format::Png, Format::Jpeg, Format::Vectorcraft];
 
     /// The format of `bytes`, told from how they start. `None` for anything else, including compressed SVG,
     /// PostScript (EPS and older .ai files) and the other formats the engine could read.
     pub fn sniff(bytes: &[u8]) -> Option<Format> {
+        // VectorCraft's own test, the one the engine applies first
+        if vectorcraft_format::sniff(bytes) {
+            return Some(Format::Vectorcraft);
+        }
         if bytes.starts_with(b"%PDF-") {
             return Some(Format::Pdf);
         }
@@ -58,6 +64,7 @@ impl Format {
             Format::Svg => "svg",
             Format::Png => "png",
             Format::Jpeg => "jpeg",
+            Format::Vectorcraft => "vectorcraft",
         }
     }
 
@@ -67,6 +74,7 @@ impl Format {
             Format::Svg => "image/svg+xml",
             Format::Png => "image/png",
             Format::Jpeg => "image/jpeg",
+            Format::Vectorcraft => "application/vnd.vectorcraft",
         }
     }
 
@@ -286,13 +294,17 @@ mod tests {
             Format::sniff("\u{feff}\n<?xml version=\"1.0\"?>\n<!-- a -->\n<svg/>".as_bytes()),
             Some(Format::Svg)
         );
+        assert_eq!(
+            Format::sniff(br#"{"format":"vectorcraft","version":4,"document":{}}"#),
+            Some(Format::Vectorcraft)
+        );
         for other in [
             &b"%!PS-Adobe-3.0 EPSF-3.0"[..],
             b"\x1f\x8b\x08\x00",
             b"GIF89a",
             b"8BPS",
             b"<html><body>no image</body></html>",
-            b"{\"format\":\"vectorcraft\"}",
+            b"{\"format\":\"something else\"}",
             b"",
         ] {
             assert_eq!(Format::sniff(other), None, "{other:?}");
@@ -307,6 +319,7 @@ mod tests {
         assert_eq!(engine_name("art.ai", "image/png").unwrap(), "art.png");
         assert_eq!(engine_name("../../etc/passwd.pdf", "application/pdf").unwrap(), "passwd.pdf");
         assert_eq!(engine_name("", "image/svg+xml").unwrap(), "document.svg");
+        assert_eq!(engine_name("draft.json", "application/vnd.vectorcraft").unwrap(), "draft.vectorcraft");
         assert!(engine_name("a.pdf", "").is_none());
     }
 

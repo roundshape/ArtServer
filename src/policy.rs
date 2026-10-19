@@ -106,11 +106,11 @@ const SHARED: &[&str] = &[
 ];
 
 /// Formats allowed for export.
-pub const EXPORT_FORMATS: &[&str] = &["svg", "pdf", "png"];
+pub const EXPORT_FORMATS: &[&str] = &["svg", "pdf", "png", "ai", "vectorcraft"];
 
 /// Extensions of the file names that may be opened or placed, always with the file's contents as data. The
 /// tools check the contents too (src/uploads.rs), since the engine tells formats from the contents.
-const IMPORT_EXTENSIONS: &[&str] = &["svg", "pdf", "ai", "png", "jpg"];
+const IMPORT_EXTENSIONS: &[&str] = &["svg", "pdf", "ai", "png", "jpg", "vectorcraft"];
 
 /// Arguments that may name a place in the file system. Refused when the value is a string. Ones that take a
 /// shape id (a number), such as `path` of `text.createInPath`, pass.
@@ -142,6 +142,10 @@ pub fn check(command: &str, params: &Value, caller: Caller) -> Result<(), String
             let format = map.get("format").and_then(Value::as_str);
             if !format.is_some_and(|f| EXPORT_FORMATS.contains(&f)) {
                 return Err(format!("export format must be one of {}", EXPORT_FORMATS.join(", ")));
+            }
+            // .ai files are written PDF-compatible only, never in the legacy PostScript form (docs/design-policy.md section 4.6)
+            if map.get("aiVersion").is_some_and(|v| v != "pdf") {
+                return Err("only PDF-compatible .ai files are written".to_string());
             }
         }
         "document.open" | "file.place" => {
@@ -238,15 +242,23 @@ mod tests {
     fn export_open_and_place_are_limited_to_known_forms() {
         assert!(check("document.export", &json!({"format": "eps"}), Caller::ArtServer).is_err());
         assert!(check("document.export", &json!({}), Caller::ArtServer).is_err());
-        assert!(check("document.export", &json!({"format": "pdf"}), Caller::ArtServer).is_ok());
+        for format in ["svg", "pdf", "png", "ai", "vectorcraft"] {
+            assert!(
+                check("document.export", &json!({"format": format}), Caller::ArtServer).is_ok(),
+                "{format}"
+            );
+        }
+        assert!(check("document.export", &json!({"format": "ai", "aiVersion": "pdf"}), Caller::ArtServer).is_ok());
+        assert!(check("document.export", &json!({"format": "ai", "aiVersion": "7"}), Caller::ArtServer).is_err());
+        assert!(check("document.export", &json!({"format": "ai", "aiVersion": 7}), Caller::ArtServer).is_err());
         for id in ["document.open", "file.place"] {
-            for name in ["a.SVG", "a.pdf", "a.ai", "a.png", "a.jpg"] {
+            for name in ["a.SVG", "a.pdf", "a.ai", "a.png", "a.jpg", "a.vectorcraft"] {
                 assert!(
                     check(id, &json!({"name": name, "dataBase64": ""}), Caller::ArtServer).is_ok(),
                     "{id} {name}"
                 );
             }
-            for name in ["a.eps", "a.psd", "a.vectorcraft", "a.svgz", "svg"] {
+            for name in ["a.eps", "a.psd", "a.vctemplate", "a.svgz", "svg"] {
                 assert!(
                     check(id, &json!({"name": name, "dataBase64": ""}), Caller::ArtServer).is_err(),
                     "{id} {name}"

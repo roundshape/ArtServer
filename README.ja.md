@@ -14,8 +14,8 @@ AIエージェントがネットワーク経由の [MCP](https://modelcontextpro
 - 文字を置く（日本語、縦書き、エリア内文字、パスに沿った文字）。使えるフォントの一覧を返す
 - 移動・回転・拡大縮小・反転・傾き、図形の合成（パスファインダー）、グラフ、文字の回り込み
 - 許可したエンジンのコマンドを、探して実行する（`command_list` / `command_run` / `command_batch`）
-- SVGを読み込む。アップロード用の URL で送ったファイル（PDF、Illustrator の .ai、SVG、PNG、JPEG）を開く・配置する
-- SVG・PDF・PNG で書き出す（小さい SVG・PNG は返事に入れ、PDF と大きいものはダウンロード用の URL で渡す）。プレビュー画像を返す
+- SVGを読み込む。アップロード用の URL で送ったファイル（PDF、Illustrator の .ai、SVG、PNG、JPEG、VectorCraft の .vectorcraft）を開く・配置する
+- SVG・PDF・PNG・Illustrator の .ai（PDF 互換）・VectorCraft の .vectorcraft で書き出す（小さい SVG・PNG は返事に入れ、ほかの形式と大きいものはダウンロード用の URL で渡す）。プレビュー画像を返す
 - 元に戻す／やり直す
 
 ## 必要なもの
@@ -158,8 +158,8 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `document_new` | 新しい文書（アートボード1つ）を作る |
 | `import_svg` | SVG のマークアップを新しい文書として開く（リンクされたファイルは読まない） |
 | `list_fonts` | 使えるフォントのファミリーの一覧（`query` で絞り込み）。`family` を指定すると、そのスタイルの一覧 |
-| `export_document` | SVG・PNG・PDF で書き出す。小さい SVG（32KB まで）はテキスト、小さい PNG（256KB まで）は画像で返す。PDF とそれより大きいものは、取りに来るための URL を返す（[大きい書き出し結果の受け取り](#大きい書き出し結果の受け取り)）。`delivery` で返し方を指定できる（`inline` なら PDF も Base64 で返す） |
-| `upload_create` | ファイルを送るための URL を作る（PDF、PDF 互換で保存した Illustrator の `.ai`、SVG、PNG、JPEG）。HTTP の PUT で送るか、ブラウザで URL を開いて送る（[ArtServer へのファイルの送り方](#artserver-へのファイルの送り方)） |
+| `export_document` | SVG・PNG・PDF・Illustrator の `.ai`・VectorCraft の `.vectorcraft` で書き出す。小さい SVG（32KB まで）はテキスト、小さい PNG（256KB まで）は画像で返す。PDF・`.ai`・`.vectorcraft` とそれより大きいものは、取りに来るための URL を返す（[大きい書き出し結果の受け取り](#大きい書き出し結果の受け取り)）。`delivery` で返し方を指定できる（`inline` ならバイナリの形式も Base64 で返す）。`.ai` は PDF 互換で保存する。Illustrator では PDF のアートワーク（ページごとに1つのクリップグループ）として開き、ArtServer と VectorCraft では元どおり編集できる形で開く |
+| `upload_create` | ファイルを送るための URL を作る（PDF、PDF 互換で保存した Illustrator の `.ai`、SVG、PNG、JPEG、VectorCraft の `.vectorcraft`）。HTTP の PUT で送るか、ブラウザで URL を開いて送る（[ArtServer へのファイルの送り方](#artserver-へのファイルの送り方)） |
 | `open_upload` | 送ったファイルを新しい文書として開く。ArtServer が書き出した PDF は、元の文書のとおりに開く |
 | `place_upload` | 送ったファイルを今の文書に配置する（埋め込み）。位置の指定か、四角形に収める指定ができる |
 
@@ -244,10 +244,10 @@ curl -T logo.png "http://127.0.0.1:8471/uploads/4ea8…"
 
 Claude Desktop など、コマンドを実行できないクライアントでは、AI が URL を利用者に渡します。ブラウザで開いてファイルを選び、「Send」を押してください。その後、AI が `open_upload` で新しい文書として開くか、`place_upload` で今の文書に配置します。
 
-- 受け付ける形式: PDF（PDF 互換で保存した Illustrator の `.ai` を含む）、SVG、PNG、JPEG。形式はファイル名ではなく、中身から見分けます。
+- 受け付ける形式: PDF（PDF 互換で保存した Illustrator の `.ai` を含む）、SVG、PNG、JPEG、VectorCraft の `.vectorcraft`。形式はファイル名ではなく、中身から見分けます。
 - 1つの URL で送れるのは1ファイルで、大きさは `--max-upload-mib`（既定 64 MiB）までです。期限は書き出し結果と同じ（既定 10 分）です。ファイルを使えるのは URL を作った作業セッションだけで、作業セッションを閉じると捨てます。トークンは不要です。書き出し結果の URL と同じく、期限までは URL を知っている人なら誰でもファイルを送れます。
 - ファイルはパスではなく中身としてエンジンに渡します。配置したファイルは埋め込まれます。
-- **保存して続きをする**: ArtServer が書き出した PDF には、文書の編集用データが入っています。その PDF を送って `open_upload` で開くと、元の文書のとおりに戻り、続きを編集できます。
+- **保存して続きをする**: `.vectorcraft` は文書そのものです。ArtServer が書き出した PDF と `.ai` には、文書の編集用データが入っています。どれかを送って `open_upload` で開くと、元の文書のとおりに戻り、続きを編集できます。
 
 ## セキュリティ
 

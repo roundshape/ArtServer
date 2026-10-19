@@ -25,6 +25,10 @@ const ID_BYTES: usize = 32;
 /// Maximum number of characters in a file name (without the extension).
 const MAX_NAME_CHARS: usize = 100;
 
+/// Extensions of the files this server opens or writes. A document opened from a file takes the file's name as
+/// its title, extension included, which a file name made from the title drops.
+const FILE_EXTENSIONS: &[&str] = &["svg", "pdf", "ai", "png", "jpg", "jpeg", "vectorcraft"];
+
 /// Why a file couldn't be stored.
 #[derive(Debug)]
 pub enum FileError {
@@ -263,10 +267,15 @@ fn new_id() -> Result<String, FileError> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-/// Makes a file name from the document's name, without path separators or control characters.
+/// Makes a file name from the document's name, without path separators or control characters, and without
+/// the extension of a file it was opened from.
 pub fn file_name(title: Option<&str>, extension: &str) -> String {
+    let title = title.unwrap_or_default();
+    let title = match title.rsplit_once('.') {
+        Some((stem, ext)) if FILE_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(ext)) => stem,
+        _ => title,
+    };
     let stem: String = title
-        .unwrap_or_default()
         .chars()
         .filter(|c| !c.is_control() && !matches!(c, '/' | '\\' | '"' | ':' | '*' | '?' | '<' | '>' | '|'))
         .take(MAX_NAME_CHARS)
@@ -513,6 +522,10 @@ mod tests {
         assert_eq!(file_name(Some("../etc/passwd"), "svg"), "etcpasswd.svg");
         assert_eq!(file_name(Some("  "), "png"), "document.png");
         assert_eq!(file_name(None, "pdf"), "document.pdf");
+        // A document opened from a file is titled with the file's name
+        assert_eq!(file_name(Some("poster.ai"), "vectorcraft"), "poster.vectorcraft");
+        assert_eq!(file_name(Some("logo.PNG"), "pdf"), "logo.pdf");
+        assert_eq!(file_name(Some("v1.2 draft"), "pdf"), "v1.2 draft.pdf");
         let disposition = content_disposition("ポスター.pdf");
         assert!(
             disposition.starts_with("attachment; filename=\"____.pdf\"; filename*=UTF-8''%E3%83%9D"),

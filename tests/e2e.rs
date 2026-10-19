@@ -547,6 +547,56 @@ async fn uploaded_files_can_be_opened_and_placed() {
 }
 
 #[tokio::test]
+async fn ai_and_vectorcraft_exports_open_again_as_they_were() {
+    let base = start(Limits::default()).await;
+    let client = client(&base, TOKEN).await;
+    let session = ok(&call(&client, "session_create", json!({})).await)["session"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    ok(&call(
+        &client,
+        "document_new",
+        json!({"session": session, "width": 300, "height": 200, "name": "poster"}),
+    )
+    .await);
+    succeeded(
+        &call(
+            &client,
+            "draw_shape",
+            json!({"session": session, "shape": "rectangle", "x": 10, "y": 10, "width": 100, "height": 50, "fill": "#3366ff"}),
+        )
+        .await,
+    );
+
+    // The .ai is PDF-compatible (a PDF inside), and the .vectorcraft is compressed
+    for (format, magic) in [("ai", &b"%PDF-"[..]), ("vectorcraft", &b"\x1f\x8b"[..])] {
+        let exported = call(&client, "export_document", json!({"session": session, "format": format})).await;
+        let download = ok(&exported)["download"].clone();
+        let name = format!("poster.{format}");
+        assert_eq!(download["name"], name.as_str(), "binary formats always come back as a URL");
+        let got = get(download["url"].as_str().unwrap(), &[]).await;
+        assert_eq!(got.headers()["content-type"], "application/octet-stream");
+        let bytes = got.bytes().await.unwrap().to_vec();
+        assert!(bytes.starts_with(magic), "{format}: {:?}", &bytes[..bytes.len().min(8)]);
+
+        let (upload, url) = new_upload(&client, &session, &name).await;
+        assert_eq!(put(&url, &[], bytes).await.status(), 200, "{format}");
+        let opened = call(&client, "open_upload", json!({"session": session, "upload": upload})).await;
+        let opened = ok(&opened);
+        assert_eq!(opened["format"], format, "{opened}");
+        assert_eq!(opened["warnings"], json!([]), "{opened}");
+        if format == "ai" {
+            assert_eq!(opened["restored"], true, "the .ai carries the editing data: {opened}");
+        }
+        let svg = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
+        let svg = text_of(&svg).to_ascii_lowercase();
+        assert!(svg.contains("#3366ff") || svg.contains("#36f"), "{format}: {svg}");
+    }
+    let _ = client.cancel().await;
+}
+
+#[tokio::test]
 async fn uploads_are_checked() {
     let limits = Limits {
         max_upload_bytes: 4096,
