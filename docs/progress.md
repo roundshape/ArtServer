@@ -908,3 +908,30 @@ Of three options (A: correct the design policy and check `Cargo.lock` by hand wh
 ### Next steps
 
 1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
+
+## 2026-10-19 An E2E test of older MCP clients
+
+### Policy
+
+Design policy section 4.4 says that clients of the versions before 2026-07-28 (2025-06-18 and 2025-11-25, which start with `initialize` and keep `Mcp-Session-Id` if the server issues one) are supported, and section 13.2 #1 listed this as not yet verified. rmcp 3.5.1's code was read on how it serves them with `with_legacy_session_mode(false)` (`src/transport/streamable_http_server/tower.rs`): every request takes the stateless path; `initialize` answers with the version asked for when the server supports it (`negotiate_protocol_version`); no session ID is issued; notifications get 202; an `MCP-Protocol-Version` header must name a known version (none means 2025-03-26); GET gets 405. The test sends the exchange by hand, so it doesn't rest on rmcp's client, the same SDK as the server.
+
+Reading this showed that rmcp's client, which the other E2E tests use, also starts with `initialize` (`ServiceExt::serve` keeps the legacy lifecycle): it asks for 2026-07-28, which has no `initialize`, and the server settles on 2025-11-25 (checked with a throwaway test). So 2025-11-25 was already exercised through rmcp's client, and the version no test covers is 2026-07-28 (`server/discover` and per-request metadata).
+
+### What was done
+
+- `tests/e2e.rs`: `older_clients_work_without_protocol_sessions`, for 2025-06-18 and 2025-11-25: `initialize` (the version comes back as asked, the server name, the tools capability), `notifications/initialized` (202), `tools/list` (the 25 tools, in one page), and tool calls each in a request of their own: `session_create`, `document_new`, `draw_shape`, `export_document` (the SVG has the rectangle's colour) and `session_close`. Every answer is plain JSON with no `Mcp-Session-Id`, and GET `/mcp` gets 405. The helper `rpc` sends one request and checks the form of the answer.
+- Design policy sections 4.4 and 13.2 #1.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 80 passed (55 unit, 23 E2E, 2 for the PDF backend) |
+| The new test against a server with `with_legacy_session_mode(true)` (changed for the run, then put back) | Failed at the check that no session ID is issued |
+| A throwaway test printing the version rmcp's client settles on (deleted) | Asked for 2026-07-28, settled on 2025-11-25 |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes, after `cargo fmt` reflowed the new test |
+
+### Next steps
+
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
+2. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata), with rmcp's client in its discover mode (`ClientLifecycleMode::Discover`) or by hand

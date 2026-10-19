@@ -945,6 +945,106 @@ async fn post(base: &str, headers: &[(&str, &str)], body: String) -> reqwest::Re
     req.body(body).send().await.unwrap()
 }
 
+/// Sends a JSON-RPC request with `headers` and returns its result, which must come back as plain JSON with no session ID.
+async fn rpc(base: &str, headers: &[(&str, &str)], id: u64, method: &str, params: Value) -> Value {
+    let r = post(
+        base,
+        headers,
+        json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}).to_string(),
+    )
+    .await;
+    assert_eq!(r.status(), 200, "{method}");
+    assert!(r.headers().get("mcp-session-id").is_none(), "{method}: a session ID was issued");
+    let content_type = r
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    assert!(content_type.starts_with("application/json"), "{method}: {content_type}");
+    let body: Value = r.json().await.unwrap();
+    assert!(body.get("error").is_none(), "{method}: {body}");
+    body["result"].clone()
+}
+
+#[tokio::test]
+async fn older_clients_work_without_protocol_sessions() {
+    // Clients of the versions before 2026-07-28 start with initialize and keep Mcp-Session-Id if the server issues one.
+    // ArtServer issues none: the working session handle carries the state from one request to the next (design policy
+    // section 4.4). rmcp's client in the other tests also starts with initialize, but settles on 2025-11-25; this test
+    // sends the exchange by hand, as a client built on another SDK would.
+    let base = start(Limits::default()).await;
+    let bearer = format!("Bearer {TOKEN}");
+    for version in ["2025-06-18", "2025-11-25"] {
+        // The version header comes after initialize has settled the version
+        let auth = [("Authorization", bearer.as_str())];
+        let headers = [("Authorization", bearer.as_str()), ("MCP-Protocol-Version", version)];
+        let client_info = json!({"name": "older-client", "version": "0"});
+        let init = rpc(
+            &base,
+            &auth,
+            1,
+            "initialize",
+            json!({"protocolVersion": version, "capabilities": {}, "clientInfo": client_info}),
+        )
+        .await;
+        assert_eq!(init["protocolVersion"], version);
+        assert_eq!(init["serverInfo"]["name"], "artserver");
+        assert!(init["capabilities"]["tools"].is_object(), "{init}");
+        let initialized = post(
+            &base,
+            &headers,
+            json!({"jsonrpc": "2.0", "method": "notifications/initialized"}).to_string(),
+        )
+        .await;
+        assert_eq!(initialized.status(), 202, "{version}");
+
+        let tools = rpc(&base, &headers, 2, "tools/list", json!({})).await;
+        assert!(tools.get("nextCursor").is_none(), "{version}: {tools}");
+        let mut names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+        names.sort_unstable();
+        let mut expected = TOOLS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(names, expected, "{version}");
+
+        // Each call is a request of its own; only the handle ties them together
+        let tool = |id: u64, name: &str, arguments: Value| rpc(&base, &headers, id, "tools/call", json!({"name": name, "arguments": arguments}));
+        let created = tool(3, "session_create", json!({})).await;
+        let session = created["structuredContent"]["session"].as_str().unwrap().to_string();
+        for (id, name, arguments) in [
+            (4, "document_new", json!({"session": session, "width": 300, "height": 200})),
+            (
+                5,
+                "draw_shape",
+                json!({"session": session, "shape": "rectangle", "x": 20, "y": 30, "width": 100, "height": 50, "fill": "#3366ff"}),
+            ),
+        ] {
+            let r = tool(id, name, arguments).await;
+            assert_ne!(r["isError"], true, "{version} {name}: {r}");
+        }
+        let svg = tool(6, "export_document", json!({"session": session, "format": "svg"})).await;
+        let svg = svg["content"][0]["text"].as_str().unwrap().to_ascii_lowercase();
+        assert!(
+            svg.contains("<svg") && (svg.contains("#3366ff") || svg.contains("#36f")),
+            "{version}: {svg}"
+        );
+        let closed = tool(7, "session_close", json!({"session": session})).await;
+        assert_ne!(closed["isError"], true, "{version}: {closed}");
+
+        // There is no stream to open with GET, which those versions allow a server to refuse with 405
+        let stream = get(
+            &format!("{base}/mcp"),
+            &[
+                ("Authorization", bearer.as_str()),
+                ("MCP-Protocol-Version", version),
+                ("Accept", "text/event-stream"),
+            ],
+        )
+        .await;
+        assert_eq!(stream.status(), 405, "{version}");
+    }
+}
+
 #[tokio::test]
 async fn requests_without_the_right_token_get_401() {
     let base = start(Limits::default()).await;

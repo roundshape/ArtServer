@@ -34,6 +34,7 @@
   - 2026-10-19 Decided not to work on CJK fonts on Linux for now (section 7.3; chapter 11; section 13.2)
   - 2026-10-19 The time limit counts from when a request starts, and waiting to start has a limit of its own (sections 5.1, 5.3)
   - 2026-10-19 A test, not CI, checks that the PDF backend is the fixed version (chapter 8)
+  - 2026-10-19 Verified older clients (2025-06-18, 2025-11-25) with an E2E test; recorded that no test covers the 2026-07-28 version (sections 4.4, 13.2)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -204,7 +205,7 @@ The latest MCP specification (2026-07-28 version) changed the shape of Streamabl
 - If rmcp's Host allowlist is empty, it lets every Host through. ArtServer rejects an empty allowlist at startup.
 - rmcp returns tool argument validation errors (unknown arguments, etc.) not as protocol errors but as tool error results (`isError: true`). This lets the AI fix its own arguments, and follows the recommendation of the new MCP spec.
 - axum is used as the HTTP framework and tokio as the async runtime, because rmcp's Streamable HTTP server is built to plug into an axum router.
-- **Older clients** (the 2025-06-18 and 2025-11-25 versions, which use `initialize` and `Mcp-Session-Id`) are also supported. rmcp implements the 2026-07-28 version and states that it is compatible with earlier versions. Since state is held in handles, it is enough not to issue session IDs to older versions either.
+- **Older clients** (the 2025-06-18 and 2025-11-25 versions, which use `initialize` and `Mcp-Session-Id`) are also supported. rmcp implements the 2026-07-28 version and states that it is compatible with earlier versions. Since state is held in handles, it is enough not to issue session IDs to older versions either. **Verified by an E2E test (2026-10-19)**: for 2025-06-18 and 2025-11-25, `older_clients_work_without_protocol_sessions` in `tests/e2e.rs` sends the exchange as raw HTTP (`initialize`, `notifications/initialized`, `tools/list`, and tool calls from `session_create` through a drawing and an SVG export to `session_close`). The version comes back as asked, the answers are plain JSON with no `Mcp-Session-Id`, the notification gets 202, the handle carries the state from one request to the next, and GET gets 405. rmcp's client in the other E2E tests also starts with `initialize` and settles on 2025-11-25, so **the 2026-07-28 version (`server/discover` and per-request metadata) is not covered by a test**.
 
 ### 4.5 Working sessions and handles
 
@@ -649,7 +650,7 @@ When migrating, test with emphasis on "the front end keeps running when a worker
 
 | # | Details | When |
 |---|---|---|
-| 1 | How to implement the MCP protocol layer → **Decided: rmcp 3.5 series** (section 4.4). Header validation and cancellation verified by E2E tests. Compatibility with older versions (clients that use `initialize` and `Mcp-Session-Id`) is **not yet verified** | Phase 1 |
+| 1 | How to implement the MCP protocol layer → **Decided: rmcp 3.5 series** (section 4.4). Header validation and cancellation verified by E2E tests. Compatibility with older versions (clients that use `initialize` and `Mcp-Session-Id`) → **Verified by an E2E test (2026-10-19)** for 2025-06-18 and 2025-11-25 (section 4.4). The 2026-07-28 version is **not covered by a test**: rmcp's client in the E2E tests settles on 2025-11-25 | Phase 1 |
 | 2 | HTTP framework and async runtime → **Decided: axum + tokio** (section 4.4) | Phase 1 |
 | 10 | Which protocol version real clients such as Claude Code connect with → Connection and operation from Claude Code verified (2026-10-18). The protocol version used is **not yet verified** | During Phase 1 E2E verification |
 | 3 | Whether ArtServer's session type and renderer can move between threads (checked by the compiler) → **Verified** (the build passed) | At the Phase 1 build |
