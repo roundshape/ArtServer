@@ -25,7 +25,12 @@ VectorCraft crates that are not here come from GitHub at the commit given in `Ca
 - **Verification**: The fixed SVG was opened in Illustrator, and Hiragino Kaku Gothic W6 and Hiragino Mincho W6 were shown in the W6 weight (2026-10-18).
 - **Reported upstream**: [storytold/vectorcraft#2873](https://github.com/storytold/vectorcraft/issues/2873) (2026-10-18).
   The report suggests, as the root fix, reading W0–W9 in `style_weight` of `vectorcraft-text` (which would also help font selection).
-  Once upstream fixes it, remove this patch.
+- **Fixed upstream**: [storytold/vectorcraft#2896](https://github.com/storytold/vectorcraft/pull/2896) was merged into upstream `main`
+  on 2026-10-18, after the v0.13.1 release, and closed #2873. It is not in a release yet (checked 2026-10-19; the latest is v0.13.1).
+  It is the root fix the report suggested: `style_weight` in `vectorcraft-text` reads W0–W9 as the digit × 100, at least 100.
+  The weights are the same as this patch's, so SVG output should not change when the patch is removed.
+  Remove this patch when ArtServer moves to the first release that includes the fix. Upstream's fix also changes font selection,
+  so check then that Japanese fonts are still chosen in the right weight.
 - **Reapplying**: When ArtServer moved to v0.13.1 on 2026-10-18, upstream's `font_descriptor` had changed to check a variable font's `wght` axis
   first, so the fix was reapplied by reading the code instead of applying the diff. #2873 is still not fixed in v0.13.1.
 

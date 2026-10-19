@@ -39,6 +39,7 @@
   - 2026-10-19 Decided not to switch color settings per job for now (section 13.2)
   - 2026-10-19 Decided not to return exports as resource links for now (sections 4.6, 13.2)
   - 2026-10-19 Counted the engine's commands at runtime (779) and opened the 16 character and paragraph style commands the static count missed (section 4.7; chapter 11; section 13.2)
+  - 2026-10-19 Recorded that upstream fixed #2873 in `main`, not yet in a release (chapter 8)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -505,7 +506,7 @@ If method 2 is chosen, the embedded fonts become fonts that ArtServer distribute
   - This is separate from Option C in section 3.1 (copying all of VectorCraft). Only the crates with bugs are covered, and the diffs are kept small.
   - Also propose the fix upstream, and remove the replacement once it is merged.
   - If the number of fixed crates grows, or fixes keep coming and reapplying the patch becomes hard, switch to a fork of VectorCraft.
-  - Current target: `vectorcraft-svg` (the weights W0–W9 of Japanese fonts do not become SVG `font-weight`; upstream #2873).
+  - Current target: `vectorcraft-svg` (the weights W0–W9 of Japanese fonts do not become SVG `font-weight`; upstream #2873). Upstream fixed it in `main` with PR #2896 (merged 2026-10-18, after v0.13.1), but it is not in a release yet; the replacement is removed when ArtServer moves to the first release that includes it.
 - Referenced commit: v0.13.1 (`904f0fe5227bd987d55319e89a38b4b8f046998c`, updated 2026-10-18). As a rule, it follows release commits.
 
 ---

@@ -980,3 +980,11 @@ Their code was read: the styles are kept in the document (`char_styles` / `para_
 
 1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
 2. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)
+
+## 2026-10-19 Upstream fixed the Japanese font weights in `main`
+
+The issue ArtServer reported, [storytold/vectorcraft#2873](https://github.com/storytold/vectorcraft/issues/2873) (the weights W0–W9 of Japanese fonts don't become SVG `font-weight`), was closed when [PR #2896](https://github.com/storytold/vectorcraft/pull/2896) was merged into upstream `main` on 2026-10-18 at 12:20 UTC, after the v0.13.1 release ArtServer pins (04:36 UTC). It is not in a release yet: the latest is still v0.13.1, and `main` (`a466625`) is 207 commits ahead of it with the same version number. ArtServer follows releases (design policy chapter 8), so `vendor/vectorcraft-svg` stays until the first release that includes the fix.
+
+The fix (`eec304d`) is the root fix the report suggested: `style_weight` in `vectorcraft-text` reads W0–W9 as the digit × 100, at least 100, the same weights as ArtServer's patch, so SVG output should not change when the patch is removed. Unlike the patch, it also changes font selection: when no face has the exact style name, the engine takes the nearest weight by `style_weight` (`crates/text/src/fontdb.rs:2250` at v0.13.1), which now knows the W weights. That is checked when moving to that release.
+
+- `vendor/README.md` and `vendor/README.ja.md`; design policy chapter 8.
