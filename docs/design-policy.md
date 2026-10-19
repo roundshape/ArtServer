@@ -16,6 +16,8 @@
   - 2026-10-18 Added `--public-url` to set the externally visible URL (section 4.6)
   - 2026-10-18 Verified the build on Windows (sections 1.1, 13.1)
   - 2026-10-18 Updated VectorCraft to v0.13.1 (`904f0fe`) (chapter 8)
+  - 2026-10-19 Translated into English
+  - 2026-10-19 Updated the status of Phase 2 to in progress (chapter 11)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -509,7 +511,7 @@ TLS (terminated at a reverse proxy), multiple users and permission management, p
 |---|---|---|
 | 0 | Investigation of VectorCraft, choice of approach | Done (Option A-2 adopted) |
 | 1 | MVP (chapter 10) | Done (implemented 2026-10-17; connection from Claude Code verified 2026-10-18; `cargo deny` / `cargo about` introduced). Items not yet verified are in section 13.2 |
-| 2 | Feature expansion and compatibility verification (CJK fonts such as Japanese, images, layers, transparency, path operations, verification with real files). Process isolation is not built first (revisit if a condition in section 12.4 applies) | Not started |
+| 2 | Feature expansion and compatibility verification (CJK fonts such as Japanese, images, layers, transparency, path operations, verification with real files). Process isolation is not built first (revisit if a condition in section 12.4 applies) | In progress (since 2026-10-18). Done: VectorCraft's tools through GuardedBackend (section 4.7), text and fonts (`list_fonts`, `--font-dirs`), the fix for the weights of Japanese fonts in SVG (chapter 8), URL delivery of exports (section 4.6). Remaining: upload for import (section 4.6), placing images, opening more commands (section 4.7), CJK fonts on Linux (section 7.3), verification with real files |
 | 3 | Productization (REST API, multiple users, process isolation (chapter 12), job persistence, Docker, monitoring, threat analysis and load tests) | Not started |
 
 ---
