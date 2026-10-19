@@ -568,6 +568,24 @@ async fn ai_and_vectorcraft_exports_open_again_as_they_were() {
         )
         .await,
     );
+    succeeded(
+        &call(
+            &client,
+            "command_run",
+            json!({"session": session, "id": "layer.new", "params": {"name": "Layer 2"}}),
+        )
+        .await,
+    );
+    let layers = |inspected: &Value| -> Vec<String> {
+        inspected["layers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|l| l["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let original = layers(&json_of(&call(&client, "doc_inspect", json!({"session": session})).await));
+    assert_eq!(original.len(), 2, "{original:?}");
 
     // The .ai is PDF-compatible (a PDF inside), and the .vectorcraft is compressed
     for (format, magic) in [("ai", &b"%PDF-"[..]), ("vectorcraft", &b"\x1f\x8b"[..])] {
@@ -579,6 +597,10 @@ async fn ai_and_vectorcraft_exports_open_again_as_they_were() {
         assert_eq!(got.headers()["content-type"], "application/octet-stream");
         let bytes = got.bytes().await.unwrap().to_vec();
         assert!(bytes.starts_with(magic), "{format}: {:?}", &bytes[..bytes.len().min(8)]);
+        // No PDF layers in the .ai: Illustrator would make each one a clip group that is hard to select
+        if format == "ai" {
+            assert!(!bytes.windows(13).any(|w| w == b"/OCProperties"), "the .ai has PDF layers");
+        }
 
         let (upload, url) = new_upload(&client, &session, &name).await;
         assert_eq!(put(&url, &[], bytes).await.status(), 200, "{format}");
@@ -589,6 +611,9 @@ async fn ai_and_vectorcraft_exports_open_again_as_they_were() {
         if format == "ai" {
             assert_eq!(opened["restored"], true, "the .ai carries the editing data: {opened}");
         }
+        // The document's layers come back from the editing data, PDF layers or not
+        let reopened = layers(&json_of(&call(&client, "doc_inspect", json!({"session": session})).await));
+        assert_eq!(reopened, original, "{format}");
         let svg = call(&client, "export_document", json!({"session": session, "format": "svg"})).await;
         let svg = text_of(&svg).to_ascii_lowercase();
         assert!(svg.contains("#3366ff") || svg.contains("#36f"), "{format}: {svg}");

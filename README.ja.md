@@ -158,7 +158,7 @@ ArtServer のツールと、VectorCraft の MCP のツールを公開してい�
 | `document_new` | 新しい文書（アートボード1つ）を作る |
 | `import_svg` | SVG のマークアップを新しい文書として開く（リンクされたファイルは読まない） |
 | `list_fonts` | 使えるフォントのファミリーの一覧（`query` で絞り込み）。`family` を指定すると、そのスタイルの一覧 |
-| `export_document` | SVG・PNG・PDF・Illustrator の `.ai`・VectorCraft の `.vectorcraft` で書き出す。小さい SVG（32KB まで）はテキスト、小さい PNG（256KB まで）は画像で返す。PDF・`.ai`・`.vectorcraft` とそれより大きいものは、取りに来るための URL を返す（[大きい書き出し結果の受け取り](#大きい書き出し結果の受け取り)）。`delivery` で返し方を指定できる（`inline` ならバイナリの形式も Base64 で返す）。`.ai` は PDF 互換で保存する。Illustrator では PDF のアートワーク（ページごとに1つのクリップグループ）として開き、ArtServer と VectorCraft では元どおり編集できる形で開く |
+| `export_document` | SVG・PNG・PDF・Illustrator の `.ai`・VectorCraft の `.vectorcraft` で書き出す。小さい SVG（32KB まで）はテキスト、小さい PNG（256KB まで）は画像で返す。PDF・`.ai`・`.vectorcraft` とそれより大きいものは、取りに来るための URL を返す（[大きい書き出し結果の受け取り](#大きい書き出し結果の受け取り)）。`delivery` で返し方を指定できる（`inline` ならバイナリの形式も Base64 で返す）。`.ai` は PDF 互換で保存する。Illustrator では PDF のアートワーク（ただのパス。Illustrator のライブシェイプやレイヤーにはならない）として開き、ArtServer と VectorCraft ではレイヤーも含めて元どおり編集できる形で開く |
 | `upload_create` | ファイルを送るための URL を作る（PDF、PDF 互換で保存した Illustrator の `.ai`、SVG、PNG、JPEG、VectorCraft の `.vectorcraft`）。HTTP の PUT で送るか、ブラウザで URL を開いて送る（[ArtServer へのファイルの送り方](#artserver-へのファイルの送り方)） |
 | `open_upload` | 送ったファイルを新しい文書として開く。ArtServer が書き出した PDF は、元の文書のとおりに開く |
 | `place_upload` | 送ったファイルを今の文書に配置する（埋め込み）。位置の指定か、四角形に収める指定ができる |

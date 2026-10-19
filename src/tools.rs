@@ -574,9 +574,14 @@ without a token. `delivery` overrides the choice (inline returns the binary form
         ct: CancellationToken,
     ) -> Result<CallToolResult, ErrorData> {
         let mut params = json!({"format": a.format.as_str()});
-        // Compressed native files are smaller, and VectorCraft opens them as it opens plain ones
-        if matches!(a.format, ExportFormat::Vectorcraft) {
-            insert_opt(&mut params, "compress", Some(Value::Bool(true)));
+        match a.format {
+            // Compressed native files are smaller, and VectorCraft opens them as it opens plain ones
+            ExportFormat::Vectorcraft => insert_opt(&mut params, "compress", Some(Value::Bool(true))),
+            // No PDF layers in a .ai: Illustrator doesn't make them its own layers, but turns each one into a clip
+            // group with a clipping path far larger than the page, which makes the art hard to select. The
+            // document's layers stay in the editing data (docs/design-policy.md section 4.6)
+            ExportFormat::Ai => insert_opt(&mut params, "createLayers", Some(Value::Bool(false))),
+            _ => {}
         }
         if let Some(scale) = a.scale {
             if !matches!(a.format, ExportFormat::Png) {

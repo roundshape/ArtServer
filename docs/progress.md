@@ -559,3 +559,71 @@ At the project owner's suggestion, added these before trying uploads from Claude
 ### Next steps
 
 1. Check uploads and the new export formats from Claude Code and from a browser, with real `.ai` and PDF files, and open the exported `.ai` in Illustrator
+
+## 2026-10-19 Checking uploads and the new formats (server, browser, Illustrator)
+
+### Against a running server
+
+Started `target/debug/artserver` and drove it with a script. The test document had a blue rectangle, an orange ellipse at 50% opacity, a green star with a stroke, "ArtServer テスト" in Hiragino Sans W6, "Hello, Illustrator" in Inter, and a second layer. Both fonts were exact. The exported files went to `~/Desktop/artserver-output/` for the project owner.
+
+| What was checked | Result |
+|---|---|
+| Export `.ai` (15,804 bytes) | No warnings |
+| Send the `.ai` back and open it | `restored: true`. The two layers and six objects, with their names, matched the original |
+| Export `.vectorcraft` (2,568 bytes, compressed), send it back and open it | The layers and objects matched the original |
+| Place the `.ai` into another document | One group, with the warning "text was converted to outlines" (placed text becomes outlines) |
+| Place a PNG fitted into a rectangle | Placed at the given size |
+
+- `draw_shape` takes opacity in percent (0–100). The first run passed 0.5 by mistake (an error in the script, not in the server), which made the ellipse nearly invisible; rerun with 50.
+
+### In a browser (Chrome)
+
+Opened an upload URL, chose the `.ai` and sent it: the PUT returned 200, the page said "Sent. You can close this page…", and `open_upload` gave `restored: true`. Opening the URL again shows that the file has been sent.
+
+- The automation tool's clicks did not trigger the Send button, while a click dispatched in the page did, so the page works. A click by a person is not yet verified.
+- The browser tool can upload only files in folders this session can read, so the `.ai` was copied from the desktop to the session's scratchpad first.
+
+### In Illustrator (the project owner)
+
+The project owner opened `artserver-check.ai` in Illustrator and judged it good.
+
+Clicking with the Selection tool showed no selection, unlike art drawn in Illustrator. With simpler files (one rectangle, and three shapes) the Layers panel showed why: the art sat in a `<Clip Group>` whose clipping path was VectorCraft's PDF layer form box (±32,767 pt, `crates/pdf/src/forms.rs`), next to an empty `<Clip Group>` made from the form's marker (an empty clip at x = −32,000). A click selected the outer group, whose selection box was far off-screen. Illustrator showed its own "レイヤー 1", not the file's "Layer 1", so it doesn't make PDF layers its own. The same drawings exported as PDF (which has no PDF layers) opened as plain `<Path>` items directly in the layer and selected normally. A rectangle still differs from one drawn in Illustrator: it is a `<Path>`, not a live `<Rectangle>`, because PDF can't say that a path is a rectangle and Illustrator's own editing data is undocumented. Hence the next entry.
+
+The English line was set in Inter (`Inter-Regular` embedded), which is not installed on this Mac. Inter is one of the Latin families VectorCraft compiles into the program (feature `bundled-fonts`, `crates/text/src/fontdb.rs`: Source Sans 3, Source Serif 4, Inter, JetBrains Mono; nine files). ArtServer registers them before the OS fonts, so it has them on any machine, and so does the VectorCraft app; Illustrator sees only the installed fonts. The test used Inter on purpose because it is always there, but a file meant for Illustrator should use fonts installed on the client.
+
+### Found
+
+- The bundled fonts appear in `list_fonts` like installed ones, and Source Sans 3 (bundled) is the default when no font is given. A file using them looks right in Illustrator (the PDF part embeds the glyphs), but editing the text there reports a missing font. Options: (A) mark the bundled fonts in `list_fonts`, (B) tell the AI in the server description to use installed fonts for files people will edit, (C) change the default font. Not decided.
+
+### Not yet verified
+
+- Claude Code using the new tools
+- A person clicking Send on the upload page
+- Opening the exported `.vectorcraft` in the VectorCraft desktop app
+- Real `.ai` files from Illustrator and PDFs from other apps
+
+### Next steps
+
+1. Decide how to handle the bundled fonts (A, B, C above)
+2. Check from Claude Code in a new conversation, with real `.ai` and PDF files
+
+## 2026-10-19 .ai without PDF layers
+
+### What was done
+
+- `src/tools.rs`: `export_document` passes `createLayers: false` for `.ai`. VectorCraft's `.ai` writer turns PDF layers on only when the caller doesn't say otherwise (`crates/engine/src/cmd/fileio/save.rs:435`), so VectorCraft's code is unchanged. The document's layers stay in the editing data.
+- The E2E test of the `.ai` and `.vectorcraft` round trip now gives the document a second layer, checks that the `.ai` has no PDF layers (`/OCProperties`), and checks that both formats reopen with both layers.
+- README (English and Japanese) and design policy section 4.6: how Illustrator opens the `.ai`, and why it has no PDF layers.
+- Regenerated `ai-1-shape.ai`, `ai-3-shapes.ai` and `artserver-check.ai` in `~/Desktop/artserver-output/`. They have no PDF layers; the only form left in `artserver-check.ai` is the transparency group of the 50% ellipse.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 63 passed (45 unit, 18 E2E) |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes |
+| The check script against the rebuilt server | The `.ai` reopened with `restored: true` and the same layers and objects |
+
+### Not yet verified
+
+- The regenerated `.ai` files in Illustrator
