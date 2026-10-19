@@ -844,7 +844,7 @@ The closed exports and their setup stay closed; what real use shows to be missin
 
 ### Next steps
 
-1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): real .ai and PDF exports, whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
 
 ## 2026-10-19 Not working on CJK fonts on Linux for now
 
@@ -876,4 +876,4 @@ Of three options (A: separate the wait from the run, with the same length for bo
 
 ### Next steps
 
-1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): real .ai and PDF exports, whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Note what turns out to be missing
