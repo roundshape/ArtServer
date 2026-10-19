@@ -461,3 +461,12 @@ Found while explaining how concurrent requests and working sessions are handled.
 1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)
 2. Decide how exported files record "VectorCraft" (design policy section 13.2, #6)
 3. Check the name "ArtServer" for trademark conflicts before publishing (design policy section 13.2, #7)
+
+## 2026-10-19 Decided to leave "VectorCraft" in exported files as is
+
+- The project owner decided to keep what VectorCraft writes into exported files unchanged (design policy section 13.2, #6): the PDF Creator and Producer stay "VectorCraft", and PDFs keep the embedded editing data. The other options were "ArtServer" for both, and Creator "ArtServer" with Producer "VectorCraft". Changing them would have needed an option upstream, a patched copy of the PDF crate in `vendor/`, or rewriting the PDF after export.
+
+### Next steps
+
+1. Upload for import (when import of PDF or `.ai` is allowed. Design policy section 4.6)
+2. Check the name "ArtServer" for trademark conflicts before publishing (design policy section 13.2, #7)

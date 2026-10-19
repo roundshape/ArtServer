@@ -18,6 +18,7 @@
   - 2026-10-18 Updated VectorCraft to v0.13.1 (`904f0fe`) (chapter 8)
   - 2026-10-19 Translated into English
   - 2026-10-19 Updated the status of Phase 2 to in progress (chapter 11)
+  - 2026-10-19 Decided to leave "VectorCraft" in exported files as is (section 13.2)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -615,7 +616,7 @@ When migrating, test with emphasis on "the front end keeps running when a worker
 | 3 | Whether ArtServer's session type and renderer can move between threads (checked by the compiler) → **Verified** (the build passed) | At the Phase 1 build |
 | 4 | Finalizing third-party licenses (`cargo deny` / `cargo about`) → **Done (2026-10-18)**. `THIRD_PARTY_NOTICES.md` is generated from `deny.toml`, `about.toml` and `about.hbs`. No GPL / LGPL / MPL | Phase 1 |
 | 5 | How to provide CJK fonts (such as Japanese) (section 7.3) | Phase 2 |
-| 6 | Handling of "VectorCraft" written into output files (PDF Producer etc.) | Phase 2 |
+| 6 | Handling of "VectorCraft" written into output files (PDF Producer etc.) → **Decided (2026-10-19): left as is**. The PDF Creator and Producer stay "VectorCraft", and PDFs keep the embedded editing data (`vectorcraft-editing.vectorcraft`) | Phase 2 |
 | 7 | Checking trademark conflicts for "ArtServer" | Before publication |
 | 8 | Whether color settings need to be switched per job (if so, consider moving process isolation earlier; section 12.4) | Phase 2 |
 | 9 | Isolation unit and method (section 12.3) | When Phase 3 starts |
