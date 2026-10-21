@@ -1130,3 +1130,40 @@ Not tried: EPS (uploads don't take it), real `.ai` files (step 1 of the next ste
 1. Check from Claude Code in a new conversation (`RUST_LOG=debug`), as in the entry before, including the time and the most memory real files take
 2. Not decided: process isolation, after step 1. The test points to memory: a limit per worker, and memory returned when a worker ends
 3. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)
+
+## 2026-10-21 A shorter Linux CI
+
+### Policy
+
+The project owner asked for the Linux build on GitHub Actions to take less time, after asking ChatGPT, which suggested three changes: `cargo check --locked` on ordinary pushes, `cargo build --locked` when needed, and a lower optimization level for CI only. The runs and their logs were read first:
+
+- A run took 6 to 8 minutes: 45 s restoring the cache and about 6 minutes building. Of the 42 commits since 2026-10-18, 20 changed only documents, and each still built for 6 minutes.
+- Even with the cache, every run compiled `vectorcraft-svg`, `vectorcraft-engine`, `vectorcraft-mcp` and `artserver` (run 39547554230). Swatinem/rust-cache doesn't keep crates that live in the repository, and `vendor/vectorcraft-svg` is one, so the engine that depends on it is compiled again each time. `vendor/vectorcraft-svg` goes away with the first VectorCraft release that has the #2873 fix (design policy chapter 8), so this is left alone.
+
+The project owner agreed to the first two suggestions, and to skipping pushes that change only documents. The third was not taken: `cargo check` makes no machine code, so the optimization level hardly matters to it, and a profile for CI only would be one more setting in `Cargo.toml`.
+
+### What was done
+
+- `.github/workflows/build.yml`:
+  - On push and pull requests, `cargo check --locked` instead of `cargo build --locked`. It finds what the build found except errors at the last stages, such as linking.
+  - Run by hand (`workflow_dispatch`: the Actions page, or `gh workflow run build.yml`), the full `cargo build --locked`, for example after raising VectorCraft's rev. The Windows build stays as it was, run by hand.
+  - `paths-ignore` (`docs/**`, `**.md`, `LICENSE`): a push or pull request that changes only those doesn't run it. No `.md` file is read by the build (no `include_str!` of one).
+  - rust-cache keeps a cache for the check and one for the build (`key`), since they leave different results: with one key, a check restoring the build's cache would find nothing to reuse and, the key already saved, never save its own.
+  - Concurrency is grouped by the event too, so that a push doesn't cancel a build run by hand.
+- Design policy section 1.1 (Linux); `README.md` and `README.ja.md` (Requirements).
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `gh run list` / `gh run view --json jobs` / `gh run view --log` (run 39547554230) | 438 s in all, the build step 359 s; it compiled the four crates above |
+| `git show --name-only` over the commits since 2026-10-18 | 42 commits, 20 of them only documents |
+| Locally, after touching `vendor/vectorcraft-svg/src/lib.rs`: `cargo check --locked --offline`, then `cargo build --locked --offline` | The same four crates: check 5.6 s, build 61 s (8 cores; GitHub's machines have 2) |
+| The workflow read with Ruby's YAML parser | The triggers, `paths-ignore`, the two steps' conditions and the concurrency group as written |
+
+### Next steps
+
+1. After the push, see how long the check takes on GitHub Actions. The first run has no check cache yet and checks every dependency; the runs after it reuse that cache
+2. Check from Claude Code in a new conversation (`RUST_LOG=debug`), as in the entries before
+3. Not decided: process isolation, after step 2
+4. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)

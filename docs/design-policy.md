@@ -41,6 +41,7 @@
   - 2026-10-19 Counted the engine's commands at runtime (779) and opened the 16 character and paragraph style commands the static count missed (section 4.7; chapter 11; section 13.2)
   - 2026-10-19 Recorded that upstream fixed #2873 in `main`, not yet in a release (chapter 8)
   - 2026-10-21 Recorded the measured cost of one process: starting and the font scan are small, memory is the cost (sections 12.3, 12.5)
+  - 2026-10-21 The Linux CI runs `cargo check` on push and skips pushes that change only documents; the full build runs by hand (section 1.1)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -77,7 +78,7 @@ From this premise, we take the following policies.
 - **The server environment matches the organization's clients.** Glyph shapes are determined by the server's fonts (chapter 7). In standalone mode they naturally match the client. On an internal LAN or in the cloud, the organization aligns the server's OS and fonts with its clients.
 - **Supported OSes**:
   - macOS: the environment used for development and verification
-  - Linux: expected to have few users. Since VectorCraft supports it, we only keep the build passing (GitHub Actions, `.github/workflows/build.yml`). No tests or runtime verification
+  - Linux: expected to have few users. Since VectorCraft supports it, we only keep the build passing (GitHub Actions, `.github/workflows/build.yml`: `cargo check` on every push that changes more than documents, and a full build when run by hand). No tests or runtime verification
   - Windows: expected to be needed as standalone or as an internal server by organizations whose PCs run Windows. The build is confirmed to pass (GitHub Actions, the manually run `.github/workflows/build-windows.yml`). Behavior on a real machine is not yet verified, and the priority of support is undecided (section 13.1)
 - **Font licensing is the operator's responsibility.** ArtServer only provides the ability to use the fonts on the server. It does not check licenses or restrict use. ArtServer is responsible only for the fonts that ArtServer itself distributes (the bundled fonts, and also any fonts embedded at build time) (chapter 9).
 

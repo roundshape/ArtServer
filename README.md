@@ -22,7 +22,7 @@ A headless vector graphics server that AI agents operate over the network throug
 
 - Rust 1.95 or later
 - macOS (developed and tested on Apple Silicon)
-- On Linux and Windows, only the build is checked (on GitHub Actions). Running on them has not been tested
+- On Linux and Windows, only the build is checked (on GitHub Actions: Linux is compiled with `cargo check` on every push, and both are fully built when their workflows are run by hand). Running on them has not been tested
 - Access to crates.io and GitHub (storytold/vectorcraft, storytold/craft-libs) for the first build
 
 ## Build

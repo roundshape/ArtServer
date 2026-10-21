@@ -1,18 +1,24 @@
-# Checks that ArtServer builds on Linux. Tests are not run (docs/progress.md 2026-10-18)
+# Checks that ArtServer compiles on Linux. Tests are not run (docs/progress.md 2026-10-18)
+# On push and pull requests: `cargo check`, which compiles without making the binary, to keep runs short.
+# Started by hand from GitHub's Actions page (or with gh workflow run build.yml): a full `cargo build`, linking
+# included, for example after raising VectorCraft's rev (docs/progress.md 2026-10-21)
 name: build
 
+# Pushes that change only documents don't run it
 on:
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**.md", "LICENSE"]
   pull_request:
+    paths-ignore: ["docs/**", "**.md", "LICENSE"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# A new push to the same branch cancels the older run
+# A new push to the same branch cancels the older run (a push doesn't cancel a build started by hand)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +28,14 @@ jobs:
       - uses: actions/checkout@v5
       - name: Set up Rust
         run: rustup toolchain install stable --profile minimal && rustup default stable
-      # Carry the dependencies' build results over to the next run, to make it shorter
+      # Carry the dependencies' build results over to the next run, to make it shorter. The check and the build
+      # leave different results, so each keeps its own cache
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ github.event_name == 'workflow_dispatch' && 'build' || 'check' }}
+      - name: Check
+        if: github.event_name != 'workflow_dispatch'
+        run: cargo check --locked
       - name: Build
+        if: github.event_name == 'workflow_dispatch'
         run: cargo build --locked

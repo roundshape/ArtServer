@@ -22,7 +22,7 @@ AIエージェントがネットワーク経由の [MCP](https://modelcontextpro
 
 - Rust 1.95 以上
 - macOS（Apple Silicon で開発・動作確認をしている）
-- Linux・Windows は、ビルドが通ることだけを GitHub Actions で確認している。動作は確認していない
+- Linux・Windows は、ビルドが通ることだけを GitHub Actions で確認している（Linux は push のたびに `cargo check` でコンパイルを確認し、完全なビルドはどちらも手動で実行したときに行う）。動作は確認していない
 - 初回ビルド時に crates.io と GitHub（storytold/vectorcraft、storytold/craft-libs）へ接続できること
 
 ## ビルド
