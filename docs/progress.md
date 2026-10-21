@@ -1264,3 +1264,31 @@ rmcp 3.5.1's code was read on what it asks of a 2026-07-28 request (`src/transpo
 3. Not decided: whether to describe uploaded `.ai` files without "saved with PDF compatibility" (README, `uploads::ACCEPTED`, the tools' descriptions)
 4. Not decided: whether to do anything about `session_close` never being called, and about previews' transparent background
 5. Not decided: process isolation
+
+## 2026-10-21 `.ai` files saved without PDF compatibility, `session_close`, and the cached CI check
+
+### Policy
+
+Two open points of the check from Claude Code, looked at before changing anything:
+
+- **`.ai` saved without PDF compatibility.** The check found that one opens whole, and the entry said the wording "saved with PDF compatibility" was narrower than what works. Trying the same file in each way showed otherwise: only `open_upload` without `pages` reads the art, from Illustrator's own data in the file (VectorCraft `crates/engine/src/cmd/fileio/load.rs:186-195`, which skips that data when pages are picked, and `:236-245`). `open_upload` with `pages` and `place_upload` bring in the notice page Illustrator writes as the PDF part ("save it again with PDF compatibility…"), reported as a success with the warning "only the PDF-compatible part of this file was read: art outside its artboards…", which doesn't say what happened. "Saved with PDF compatibility" is the condition under which a file works every way, so the project owner chose to keep it in what the AI reads (`uploads::ACCEPTED`, the tools' descriptions) and to note the rest for people. Whether to report the success with the notice page to VectorCraft is not decided.
+- **`session_close` never called.** The check's entry and the explanation before it relied on the 2026-10-19 note that the server's instructions don't mention `session_close`; that was fixed the same day (`0063a0c`): the instructions and `session_close`'s own description both say to close the session when the work is done. In the check, the AI did requests 2 to 6 in one session (06:43–07:06 UTC) while the project owner kept asking, so the work was never done; closing after each request would have discarded the documents. The server closes unused sessions after 30 minutes. The project owner chose to change nothing.
+
+### What was done
+
+- `README.md` and `README.ja.md` (Sending files to ArtServer): how an `.ai` saved without PDF compatibility opens and places, and the advice to save with PDF compatibility, Illustrator's default.
+- Design policy section 4.6 (Formats).
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| A script sending `nonPDF互換.ai` to the release build: `open_upload` named `.ai`, without a name, and with `pages` "1"; `place_upload` with and without `page` | Opened whole in the first two (the artboard's name from Illustrator, "アートボード 1"); the notice page in the other three, each a success with the warning above. Previews of the last two show the notice text |
+| `gh run view` of run 39562121287 (commit `959ac8b`, the first check with its cache) | Succeeded in 51 s in all: 10 s restoring the cache, 28 s checking (`vectorcraft-svg`, the engine, `vectorcraft-mcp` and `artserver`, as before). The cached build took 438 s |
+
+### Next steps
+
+1. Not tried yet: text styles (`charStyle.*`, `paraStyle.*`) from Claude Code, and opening an exported `.vectorcraft` in the VectorCraft desktop app
+2. Not decided: whether to report to VectorCraft that an `.ai` without PDF compatibility, placed or opened with pages, comes in as its notice page reported as a success
+3. Not decided: whether to do anything about previews' transparent background
+4. Not decided: process isolation

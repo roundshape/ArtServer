@@ -247,6 +247,7 @@ curl -T logo.png "http://127.0.0.1:8471/uploads/4ea8…"
 A client that can't run commands, such as Claude Desktop, can give you the URL instead: open it in a browser, choose the file and press Send. Then the AI calls `open_upload` to open the file as a new document, or `place_upload` to put it into the active document.
 
 - Accepted formats: PDF (including Illustrator `.ai` files saved with PDF compatibility), SVG, PNG, JPEG and VectorCraft `.vectorcraft`. The format is told from the file's contents, not from its name.
+- An Illustrator `.ai` saved without PDF compatibility has only a notice page as its PDF part. `open_upload` without `pages` still opens its art, which the engine reads from Illustrator's own data in the file; `place_upload`, and `open_upload` with `pages`, bring in the notice page instead. Save `.ai` files with PDF compatibility (Illustrator's default) to use them every way.
 - A URL takes one file, up to `--max-upload-mib` (64 MiB by default), and expires like exports (10 minutes by default). Only the working session that made it can use the file, and closing the session discards it. No token is needed: as with download URLs, anyone who knows the URL can send a file to it until then.
 - The file is passed to the engine as data, never as a path, and placed files are embedded.
 - **Saving and resuming:** a `.vectorcraft` file is the document itself, and a PDF or `.ai` exported by ArtServer carries the document's editing data. Send one back and open it with `open_upload`, and the document comes back as it was, ready to edit.
