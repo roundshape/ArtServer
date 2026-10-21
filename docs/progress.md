@@ -1041,6 +1041,10 @@ What this means for process isolation:
 - Memory is the cost. With one process per session, each process pays the fonts and the rendering caches itself: about 100 MiB once it renders, about 160–175 MiB with Japanese text and a PDF export. Eight sessions would take about 1.3 GB, against about 160 MiB in one process today.
 - The document was small. The memory of large documents read from real files grows the same way in both forms.
 
+### What was done
+
+- Design policy section 12.5: the measured cost of starting a process, the font scan and memory per process. Section 12.3: the table's costs of each isolation unit now rest on memory, not on the startup cost.
+
 ### Commands run and results
 
 | Command | Result |

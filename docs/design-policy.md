@@ -40,6 +40,7 @@
   - 2026-10-19 Decided not to return exports as resource links for now (sections 4.6, 13.2)
   - 2026-10-19 Counted the engine's commands at runtime (779) and opened the 16 character and paragraph style commands the static count missed (section 4.7; chapter 11; section 13.2)
   - 2026-10-19 Recorded that upstream fixed #2873 in `main`, not yet in a release (chapter 8)
+  - 2026-10-21 Recorded the measured cost of one process: starting and the font scan are small, memory is the cost (sections 12.3, 12.5)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -604,11 +605,11 @@ HTTP / MCP / auth / session management
 
 | Unit | Pros | Cons |
 |---|---|---|
-| One process per session | Easy to understand; the scope of a failure is clear | The startup cost (especially font initialization) is paid for every session |
-| One process per user | Lower startup cost | Sessions of the same user share failures and shared state |
-| Worker pool | Lower startup cost | Hard to reset state before reuse and to prevent leftover data. Sessions with different trust boundaries must not be mixed in the same process |
+| One process per session | Easy to understand; the scope of a failure is clear | Memory: each process holds its own fonts and rendering caches, about 100–175 MiB per session against about 0.15 MiB for a further session in one process (measured 2026-10-21, section 12.5). Starting a process and the font scan take only tens of milliseconds |
+| One process per user | Less memory: the sessions of a user share one process's fonts and rendering caches | Sessions of the same user share failures and shared state |
+| Worker pool | Less memory: the sessions in a worker share its fonts and rendering caches | Hard to reset state before reuse and to prevent leftover data. Sessions with different trust boundaries must not be mixed in the same process |
 
-One process per session is the first candidate, but it is not fixed as a permanent spec. Choose after measuring the number of users, concurrency, document size, font initialization cost and memory usage.
+One process per session is the first candidate, but it is not fixed as a permanent spec. Choose after measuring the number of users, concurrency and document size. The cost of starting a process, the font scan and the memory of one process were measured on 2026-10-21 (section 12.5).
 
 ### 12.4 Conditions for starting
 
@@ -627,7 +628,8 @@ When migrating, test with emphasis on "the front end keeps running when a worker
 
 - **Isolation may be needed for features**: Color settings (working color space, ICC profiles) are shared across the whole process, so the commands that change them are currently banned (section 6.2). If print use cases need to switch CMYK profiles per job, separating processes would allow this per session. Isolation can be needed not only for safety but also for features.
 - **Memory limits are decided per process, based on the whole machine's memory**: The limits for the image cache and Undo history are computed on Linux as 1/8 of the installed memory (MemTotal in `/proc/meminfo`), and do not take memory limits of containers etc. into account (VectorCraft `crates/render/src/images.rs:33-45`, `crates/engine/src/lib.rs:196-214`). With multiple processes, each process decides that it "may use up to 1/8 of all memory", so the limits must be set explicitly.
-- **Font initialization cost**: The first font lookup scans every font folder. With one process per session, this wait happens every time a session starts.
+- **Font initialization cost**: The first font lookup scans every font folder. With one process per session, this wait happens every time a session starts. → **Measured (2026-10-21): small.** On the development Mac (432 font files, 379 families), a new process answers in 6 ms, and the scan, started in the background at startup, is done 40 ms after starting (161 ms with the disk cache cold). A machine with many more fonts, Linux and Windows were not measured (`docs/progress.md`, 2026-10-21).
+- **Memory per process (measured 2026-10-21)**: Fonts and rendering caches are shared across the whole process, so in one process a further session doing the same work adds only about 0.15 MiB, while each worker process would pay them itself. One session took about 100 MiB once it rendered (the first rendering adds about 74 MiB, even without text), and about 160–175 MiB with Japanese text and a PDF export: the engine reads every installed file of a font family into memory the first time the family is used (Hiragino Sans: ten files, 57 MiB; VectorCraft `crates/text/src/fontdb.rs:2118`). Eight such sessions take about 160 MiB in one process, and would take about 1.3 GB with one process per session. Weigh this when choosing the isolation unit (section 12.3).
 - **Risks of import**: Stack overflow and out-of-memory cannot be prevented by panic guards. SVG / PDF / EPS import has measures such as nesting depth limits, but the chance of the whole process crashing is not zero.
 
 ### 12.6 What to design when starting
