@@ -1058,3 +1058,75 @@ What this means for process isolation:
 1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Also note whether reading a file makes the server crash or hang, how long it takes and the most memory it uses. Note what turns out to be missing
 2. Not decided: process isolation, after step 1. Discussed: a startup option choosing between today's threads and worker processes, with today's form as the default
 3. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)
+
+## 2026-10-21 Endurance test with hostile files
+
+### Policy
+
+To see how close the current form (one process, a thread per working session) comes to the crashes and hangs process isolation guards against (design policy sections 12.1 and 12.5), hostile files were sent through uploads, as an AI or a person could send them. Each file went through `upload_create`, a PUT, `open_upload`, and when it opened, `render_preview` and a PNG export; the steps stop at the first that fails. After each file, another working session made a document, drew a rectangle and exported SVG, to see whether the server still served others. A watchdog in the script killed the server when its RSS went over 4 GiB (8 GiB in the follow-up), so the Mac wouldn't start swapping; that counts as running out of memory. The scripts and files were kept outside the repository, and nothing in it was changed.
+
+### Environment
+
+| Item | Details |
+|---|---|
+| Machine | As in the entry before (Apple M3, 8 cores, 24 GB, macOS 26.7.1) |
+| Build | `target/release/artserver` of `0820c25` (the later commits changed documents only), default settings: a call's time limit 60 s, `--max-running` 2, upload limit 64 MiB |
+| Memory figures | RSS sampled every 50 ms, so short peaks may be higher. The server keeps the memory a file took (see below), so an increase is counted from the RSS before the file |
+
+### Results
+
+No file crashed or hung the server, and the server log has no panic. After every file the other session's job finished at once, so no run slot was left held either.
+
+Refused by VectorCraft's limits:
+
+| File | Size | Answer of `open_upload` |
+|---|---|---|
+| SVG with 100,000 nested groups | 700 KB | "the SVG's elements are nested more than 256 deep" |
+| SVG with entities expanding to 10^9 words (billion laughs) | 886 B | "a possible entity reference loop is detected" |
+| SVG whose `<use>` elements fan out to 10^9 rectangles / refer to each other in a cycle | 3 KB / 207 B | "SVG data parsing failed cause nodes limit reached" |
+| SVG with 1,000,000 rectangles | 44 MB | The same nodes limit, after 0.9 s and +1.2 GB. A large SVG made in good faith would be refused too |
+| PDF whose content stream inflates to about 1 GB (80 million rectangles) | 2 MB | "a stream in it would decode to more than 256 MB", after 0.5 s and +0.6 GB |
+| PDF with an image claiming 40,000 × 40,000 RGB (4.8 GB decoded) | 4.7 MB | The same 256 MB limit, after 0.7 s; the peak was 1.9–3.2 GB above the RSS before |
+| PDF whose Form XObjects draw each other 16 times over 8 levels (16^8 draws) | 5 KB | "PDF content is incomplete or exceeds the reader's limits", after 9.4 s |
+| PDF with 200,000 nested arrays / 2 MB of random bytes after the header | 400 KB / 2 MB | "PDF parser rejected the document: Invalid" |
+| PNG claiming 2^31 × 2^31 pixels | 69 B | "Memory limit exceeded" |
+| `.vectorcraft` unpacking to 1 GB | 1 MB | "the compressed file unpacks to more than VectorCraft reads (1024 MB of document, 1024 MB per image)", after 0.5 s and +0.9 GB |
+| `.vectorcraft` with 100,000 nested JSON arrays | 200 KB | "missing field `format`": the file lacked a required field, so how far the nesting goes in a complete file was not tried; reading the nesting itself did no harm |
+
+Opened, with the limits applying later:
+
+| File | Result |
+|---|---|
+| PNG of 60,000 × 60,000 pixels (zeros; 437 KB) / JPEG claiming 65,000 × 65,000 | Opened with the warning "an image of … pixels is too large to draw"; the preview worked; the PNG export was refused: "raster exports are limited to 32768 pixels per side and 268 megapixels" |
+| SVG of 1,000,000 × 1,000,000 points with a blur of 100,000 | Opened; the preview was refused: "artboard is too large for a bounded preview" (the export was not tried after that) |
+| PDF of 20,000 pages | Opened in 0.6 s, one artboard a page (+130 MiB); preview and export worked |
+| PDF with a Form XObject that draws itself / a page tree that contains itself and claims 10^9 pages | Opened, previewed and exported normally |
+| SVG filling 2,000 × 2,000 points with a pattern of 0.001-point tiles | Previewed in 0.07 s, exported in 0.13 s |
+
+Memory is the weak point:
+
+- **A refused file can still take gigabytes before it is refused**, as the table shows: the 4.7 MB PDF with the image up to 3.2 GB, the 1 MB `.vectorcraft` 0.9 GB, the 44 MB SVG 1.2 GB. These are small files, so the upload limit (64 MiB) doesn't stop them.
+- **A file nothing refuses can take as much**: an SVG with one stroked path of 2,000,000 segments (17.5 MB) opened in 0.3 s and took 2.8 GB to preview and export (2.1 s and 2.2 s), on a fresh server. Memory grows with the segments: 500,000 took 830 MB.
+- **The memory a file took stays with the process.** After the PDF with the image, on a fresh server, the RSS stayed at 2.2 GB and was the same 20 seconds later; `vmmap` put 1.8 GB of it in `MALLOC_REALLOC (empty)` and 0.3 GB in `MALLOC_LARGE (empty)`: freed memory that macOS's allocator keeps for reuse. It is reused, not leaked, but the server stays at the highest peak it has reached.
+- In the run over all the files, the memory kept from earlier files (3.0 GB) and the 2,000,000-segment path's preview together went over the 4 GiB watchdog, which killed the server. This Mac has the memory to finish it, and on its own the file finishes; on a server with 2–4 GB, it would end the whole process and every working session.
+
+What this means for process isolation:
+
+- VectorCraft's own limits already stop the crashes and hangs tried here.
+- Memory is what one process can't bound: a single upload can take gigabytes, and the process keeps them. A worker process could be given a memory limit and stopped alone, and its memory goes back to the system when it ends.
+
+Not tried: EPS (uploads don't take it), real `.ai` files (step 1 of the next steps), Linux and Windows, and two such files at once (with two run slots their peaks can add up).
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| A script writing the 21 hostile files | 69 B to 44 MB each |
+| A script sending each file through uploads to one server, with the other session's job after each | No crash or hang; the server was killed once by the 4 GiB watchdog, at the 2,000,000-segment path |
+| Follow-ups: the paths of 100,000 to 2,000,000 segments (8 GiB watchdog, also each on a fresh server), the image files' warnings, and `vmmap -summary` after the bombs | The figures above |
+
+### Next steps
+
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`), as in the entry before, including the time and the most memory real files take
+2. Not decided: process isolation, after step 1. The test points to memory: a limit per worker, and memory returned when a worker ends
+3. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)
