@@ -1102,6 +1102,102 @@ async fn older_clients_work_without_protocol_sessions() {
     }
 }
 
+/// The protocol version without initialize, which Claude Code uses (docs/progress.md 2026-10-21).
+const LATEST: &str = "2026-07-28";
+
+/// Sends a request as a client of [`LATEST`] does: the method, and a tool call's tool, in headers as well as in the body,
+/// and the version and the client's capabilities in the params' `_meta`. Returns the result, as [`rpc`] does.
+async fn latest_rpc(base: &str, bearer: &str, id: u64, method: &str, mut params: Value) -> Value {
+    let tool = params
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|_| method == "tools/call")
+        .map(str::to_string);
+    let mut headers = vec![("Authorization", bearer), ("MCP-Protocol-Version", LATEST), ("Mcp-Method", method)];
+    if let Some(tool) = &tool {
+        headers.push(("Mcp-Name", tool));
+    }
+    params["_meta"] = json!({
+        "io.modelcontextprotocol/protocolVersion": LATEST,
+        "io.modelcontextprotocol/clientCapabilities": {},
+        "io.modelcontextprotocol/clientInfo": {"name": "latest-client", "version": "0"},
+    });
+    rpc(base, &headers, id, method, params).await
+}
+
+#[tokio::test]
+async fn latest_clients_work_without_initialize() {
+    // From 2026-07-28 there is no initialize: a client asks server/discover what the server supports, then makes each
+    // request complete in itself. rmcp handles that version for ArtServer; this test sends the exchange by hand, as
+    // Claude Code, built on another SDK, does, so that a change in how rmcp serves it shows here.
+    let base = start(Limits::default()).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let discover = latest_rpc(&base, &bearer, 1, "server/discover", json!({})).await;
+    assert!(
+        discover["supportedVersions"].as_array().unwrap().iter().any(|v| v == LATEST),
+        "{discover}"
+    );
+    assert_eq!(discover["_meta"]["io.modelcontextprotocol/serverInfo"]["name"], "artserver", "{discover}");
+    assert!(discover["capabilities"]["tools"].is_object(), "{discover}");
+
+    let tools = latest_rpc(&base, &bearer, 2, "tools/list", json!({})).await;
+    assert!(tools.get("nextCursor").is_none(), "{tools}");
+    let mut names: Vec<&str> = tools["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap()).collect();
+    names.sort_unstable();
+    let mut expected = TOOLS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(names, expected);
+
+    // As in older versions, only the working session handle ties the requests together
+    let tool = |id: u64, name: &str, arguments: Value| latest_rpc(&base, &bearer, id, "tools/call", json!({"name": name, "arguments": arguments}));
+    let created = tool(3, "session_create", json!({})).await;
+    let session = created["structuredContent"]["session"].as_str().unwrap().to_string();
+    for (id, name, arguments) in [
+        (4, "document_new", json!({"session": session, "width": 300, "height": 200})),
+        (
+            5,
+            "draw_shape",
+            json!({"session": session, "shape": "rectangle", "x": 20, "y": 30, "width": 100, "height": 50, "fill": "#3366ff"}),
+        ),
+    ] {
+        let r = tool(id, name, arguments).await;
+        assert_ne!(r["isError"], true, "{name}: {r}");
+    }
+    let svg = tool(6, "export_document", json!({"session": session, "format": "svg"})).await;
+    let svg = svg["content"][0]["text"].as_str().unwrap().to_ascii_lowercase();
+    assert!(svg.contains("<svg") && (svg.contains("#3366ff") || svg.contains("#36f")), "{svg}");
+    let closed = tool(7, "session_close", json!({"session": session})).await;
+    assert_ne!(closed["isError"], true, "{closed}");
+
+    // A request without the _meta that version requires is refused: the server holds it to that version's rules, and
+    // doesn't take it for a request of an older version
+    let bare = post(
+        &base,
+        &[
+            ("Authorization", bearer.as_str()),
+            ("MCP-Protocol-Version", LATEST),
+            ("Mcp-Method", "tools/call"),
+            ("Mcp-Name", "session_create"),
+        ],
+        json!({"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {"name": "session_create", "arguments": {}}}).to_string(),
+    )
+    .await;
+    assert_eq!(bare.status(), 400);
+    let refused: Value = bare.json().await.unwrap();
+    assert!(refused["error"]["message"].as_str().unwrap().contains("_meta"), "{refused}");
+
+    let stream = get(
+        &format!("{base}/mcp"),
+        &[
+            ("Authorization", bearer.as_str()),
+            ("MCP-Protocol-Version", LATEST),
+            ("Accept", "text/event-stream"),
+        ],
+    )
+    .await;
+    assert_eq!(stream.status(), 405);
+}
+
 #[tokio::test]
 async fn requests_without_the_right_token_get_401() {
     let base = start(Limits::default()).await;

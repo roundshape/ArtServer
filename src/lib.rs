@@ -19,7 +19,7 @@ use std::time::Duration;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::get;
 use axum::{Json, Router, middleware};
-use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
+use rmcp::transport::streamable_http_server::session::never::NeverSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::json;
 use tokio::net::TcpListener;
@@ -66,6 +66,8 @@ impl App {
         let sessions = Arc::new(Sessions::new(limits.max_sessions, limits.session_idle, engine_limits, roots, slots));
         let files = Arc::new(FileStore::new(limits.file_ttl, limits.max_file_bytes));
 
+        // No protocol sessions (Mcp-Session-Id) for any version: the working session handle carries the state from one
+        // request to the next (docs/design-policy.md section 4.4)
         let mcp_config = StreamableHttpServerConfig::default()
             .with_legacy_session_mode(false)
             .with_json_response(true)
@@ -88,7 +90,7 @@ impl App {
                     max_upload_bytes,
                 ))
             },
-            Arc::new(LocalSessionManager::default()),
+            Arc::new(NeverSessionManager::default()),
             mcp_config,
         );
 

@@ -1226,3 +1226,41 @@ Findings:
 4. Not decided: process isolation. The measurement, the endurance test and this check are all in
 5. Not decided: a test of the 2026-07-28 version (Claude Code uses it), and what to do with `LocalSessionManager`
 6. After the next push that changes code, see how long the cached check takes on GitHub Actions, and that a push of documents alone doesn't run it
+
+## 2026-10-21 A test of the 2026-07-28 version, and `NeverSessionManager`
+
+### Policy
+
+The check from Claude Code showed that it uses the 2026-07-28 version, which no test covered: the E2E tests used the versions before it, through rmcp's client (2025-11-25) and by hand (2025-06-18 and 2025-11-25). ArtServer leaves that version to rmcp, so a change in rmcp could break it while every test passed.
+
+rmcp 3.5.1's code was read on what it asks of a 2026-07-28 request (`src/transport/streamable_http_server/tower.rs`, `src/transport/common/mcp_headers.rs`, `src/model/meta.rs`): the `MCP-Protocol-Version` header; `Mcp-Method`, and `Mcp-Name` for a tool call, matching the body; and in the params' `_meta`, `io.modelcontextprotocol/protocolVersion` and `io.modelcontextprotocol/clientCapabilities`, without which the request gets 400. The project owner agreed to two changes:
+
+- A test that sends the exchange by hand, as the test of older versions does (2026-10-19), rather than switching rmcp's client to its discover mode (`ClientLifecycleMode::Discover`) for every E2E test: a client of another SDK, as Claude Code is, can catch what rmcp's own client and server would agree on wrongly, and the tools behave the same in every version, which the other E2E tests already cover. The server's log shows only what rmcp read, not Claude Code's raw requests, so the test follows the rules as rmcp enforces them.
+- `NeverSessionManager` in place of `LocalSessionManager`. With `with_legacy_session_mode(false)`, rmcp serves every request without protocol sessions, and `LocalSessionManager` went unused (noted on 2026-10-19); rmcp documents `NeverSessionManager` as the manager that disables sessions. The behavior doesn't change.
+
+### What was done
+
+- `tests/e2e.rs`: `latest_clients_work_without_initialize`, with the helper `latest_rpc` (headers and `_meta` of a 2026-07-28 request) and the constant `LATEST`:
+  - `server/discover`: 2026-07-28 among the supported versions, the server's name in `_meta`, the tools capability
+  - `tools/list`: the 25 tools, in one page
+  - Tool calls, each in a request of its own: `session_create`, `document_new`, `draw_shape`, `export_document` (the SVG has the rectangle's colour) and `session_close`. Every answer is plain JSON with no `Mcp-Session-Id` (checked by `rpc`)
+  - A tool call without the `_meta` gets 400, its error naming `_meta`: the server holds the request to that version's rules and doesn't take it for an older version's
+  - GET `/mcp` gets 405
+- `src/lib.rs`: rmcp is given `NeverSessionManager`, with a comment on why no protocol sessions are kept.
+- Design policy sections 4.4 and 13.2 (#1, #10).
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --offline --locked` | All 82 passed (55 unit, 25 E2E, 2 for the PDF backend) |
+| The new test against a server whose `ServerHandler` advertises only 2025-11-25 and 2025-06-18 (`supported_protocol_versions`, added for the run, then removed; `git diff` showed `src/tools.rs` unchanged) | The new test failed at `server/discover` (400); the test of older versions passed |
+| `cargo clippy --all-targets --offline --locked` / `cargo fmt --check` | No warnings / no changes, after `cargo fmt` reflowed the new test |
+
+### Next steps
+
+1. Push, and see how long the cached check takes on GitHub Actions (this push changes code)
+2. Not tried yet: text styles (`charStyle.*`, `paraStyle.*`) from Claude Code, and opening an exported `.vectorcraft` in the VectorCraft desktop app
+3. Not decided: whether to describe uploaded `.ai` files without "saved with PDF compatibility" (README, `uploads::ACCEPTED`, the tools' descriptions)
+4. Not decided: whether to do anything about `session_close` never being called, and about previews' transparent background
+5. Not decided: process isolation
