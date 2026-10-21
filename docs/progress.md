@@ -1167,3 +1167,62 @@ The project owner agreed to the first two suggestions, and to skipping pushes th
 2. Check from Claude Code in a new conversation (`RUST_LOG=debug`), as in the entries before
 3. Not decided: process isolation, after step 2
 4. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)
+
+## 2026-10-21 Check from Claude Code with real files
+
+### Policy
+
+The check the entries before left as the next step: real files from other apps sent through uploads, with requests a person would make, to see what the AI does with ArtServer's tools. The requests were made by the project owner in a Claude Code started in a folder holding the test files, which knew nothing of ArtServer's documents, so that the AI found the tools and commands by itself. What the AI did was read afterwards from the server's log, and the files it wrote were compared with renderings by another PDF reader (poppler's `pdftoppm`).
+
+### Setup
+
+- The token file (`~/.config/artserver/token`) and Claude Code's registration of ArtServer, both made on 2026-10-18, were gone: `claude mcp list` didn't show it, and `~/.claude.json` had no MCP server in any folder. Why is not known. A new token was made, and ArtServer was registered again with `claude mcp add` (local scope) in the folder of the test files; `claude mcp list` there showed it connected.
+- The release build of the entries before, started with `RUST_LOG=debug` and its log kept in a file. Default settings.
+- The test files: `PDF互換.ai` (Illustrator 30.8, saved with PDF compatibility; 400 × 300 pt; a rectangle, an ellipse, a star, another rectangle, "ArtServer テスト" in Hiragino Sans W6 and "Hello, Illustrator" in Helvetica Neue), `nonPDF互換.ai` (the same art saved without PDF compatibility: its PDF part is Illustrator's placeholder page), `all_photos.pdf` (made with ReportLab; A4, one page, eight JPEG photos of 1280–1920 pixels, 3.4 MB) and the photos themselves as JPEG files.
+
+### Results
+
+| Request | What the AI did | Result |
+|---|---|---|
+| Open `PDF互換.ai` and show a preview | `session_create`, `upload_create`, the PUT, `open_upload` (149 ms), then `render_preview` and `doc_inspect` at once | ArtServer's preview matches poppler's rendering: the places, the colours, the ellipse's transparency over the rectangle, the star's stroke and the W6 text |
+| Arrange the photos of `all_photos.pdf` in a new document | Its first call used the session of the first request, which the server had closed after 30 minutes unused; the answer "unknown or expired session; create one with session_create" was enough for it to make a new one. `open_upload` (305 ms), then nine `command_list` searches ("group", the Edit menu, "select", "document", `edit.paste`, `select.set`, Window › Transform, "bounds", `document.activate`). It copied the eight photos with `select.set` and `edit.copy`, made a landscape A4 document, pasted them with `edit.pasteInPlace`, and set each photo's place and size in one atomic `command_batch` of `select.set` and `object.setBounds`, keeping their proportions | Two rows of photos (five and three) |
+| Open `nonPDF互換.ai` | `upload_create`, the PUT, `open_upload` (46 ms) | Opened whole, without a warning: the same art as `PDF互換.ai` (see below) |
+| Place a photo into `PDF互換.ai`, add a title and export PDF | `open_upload`, `document.node`, `list_fonts`; one atomic `command_batch` widening the artboard to 600 × 360 pt and moving the art down; a JPEG uploaded and placed into a rectangle with `place_upload` (20 ms); `add_text` "PDF互換テスト" in Hiragino Sans; searches for "font" and "character", then `text.setStyle` to W6; `export_document` PDF (30 ms) | 1.1 MB. Hiragino Sans W6 and Helvetica Neue embedded, the photo kept as JPEG; it renders as the preview showed |
+| Trace the photo | `command_list` "trace", `imageTrace.presets`, `imageTrace.make` with "Low Fidelity Photo" (953 ms), previews (one at 2,400 pixels), `export_document` `.ai` (1,229 ms) | 30 MB; the photo became paths (object ids reached about 27,700); it renders correctly |
+| Open a file sent from the upload page | `upload_create` without a name; the project owner opened the URL in a browser, chose a JPEG and clicked Send; `open_upload` 72 s later (8 ms), a preview, `export_document` `.ai` | The photo opened as a document of 1280 × 1920 pt |
+
+The check items of the entries before:
+
+| Item | Result |
+|---|---|
+| Opening and placing real files through uploads | Done: both `.ai` files, a PDF and JPEG photos opened, and a photo was placed |
+| Whether the AI finds and uses the opened commands | Yes: it searched with `command_list` and used `select.set`, `edit.copy`, `edit.pasteInPlace`, `object.setBounds`, `artboard.setProps`, `object.move`, `text.setStyle`, `document.node`, `imageTrace.presets` and `imageTrace.make`, through `command_run` and `command_batch` (atomic where it changed several objects). Text styles were not tried |
+| Installed fonts rather than the `bundled` ones | Yes: it called `list_fonts` before adding text and took Hiragino Sans, the font of the file's own text |
+| `session_close` | Never called, in any of the requests. The server closed the unused session after 30 minutes, as it should |
+| The MCP protocol version | **2026-07-28.** Claude Code first sends `server/discover`, then makes every request in the 2026-07-28 version. No test covers that version (section 13.2 #1 of the design policy), but the real client works through it |
+| A person clicking Send on the upload page | Works |
+| Crashes, hangs, time and memory | None; the slowest call took 1.2 s (the 30 MB `.ai` export); the server's RSS was about 160 MiB after an hour and about 100 MiB after 75 minutes; the only error was the expired session |
+| Opening an exported `.vectorcraft` in the VectorCraft desktop app | Not tried |
+
+Findings:
+
+- **An `.ai` saved without PDF compatibility opens too.** When a file's PDF part is only Illustrator's placeholder page, the engine reads Illustrator's own copy of the art kept in the file (`AIPrivateData`) instead (VectorCraft `crates/engine/src/cmd/fileio/load.rs:242-245`). Its error for such files, "save it again with PDF compatibility on", is for when that copy can't be read. The README, the formats upload_create lists (`uploads::ACCEPTED`) and the tools' descriptions say "saved with PDF compatibility", narrower than what works. `.ai` files in the old PostScript form (Illustrator 8 and earlier) are still not taken by uploads.
+- **Previews have a transparent background.** Both previews were RGBA PNGs whose background was fully transparent (no white pixels); one was shown with white behind it and one with black. The document has no black, but the AI may take the background for black.
+- `LocalSessionManager` (`src/lib.rs:91`) is not needed by Claude Code, which keeps no protocol session in the 2026-07-28 version. Nothing was decided about it.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `claude mcp add --transport http artserver …` in the folder of the test files, then `claude mcp list` there with the server running | Connected |
+| The server's log read for each tool call (name, arguments, time, errors) | The figures above |
+| `pdfinfo`, `pdffonts`, `pdfimages -list` and `pdftoppm` on the test files and the files the AI exported | The fonts, images and renderings above |
+
+### Next steps
+
+1. Not tried yet: text styles (`charStyle.*`, `paraStyle.*`) from Claude Code, and opening an exported `.vectorcraft` in the VectorCraft desktop app
+2. Not decided: whether to describe uploaded `.ai` files without "saved with PDF compatibility" (README, `uploads::ACCEPTED`, the tools' descriptions)
+3. Not decided: whether to do anything about `session_close` never being called (the server closes unused sessions after 30 minutes), and about previews' transparent background
+4. Not decided: process isolation. The measurement, the endurance test and this check are all in
+5. Not decided: a test of the 2026-07-28 version (Claude Code uses it), and what to do with `LocalSessionManager`
+6. After the next push that changes code, see how long the cached check takes on GitHub Actions, and that a push of documents alone doesn't run it
