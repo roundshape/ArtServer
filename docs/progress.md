@@ -988,3 +988,69 @@ The issue ArtServer reported, [storytold/vectorcraft#2873](https://github.com/st
 The fix (`eec304d`) is the root fix the report suggested: `style_weight` in `vectorcraft-text` reads W0–W9 as the digit × 100, at least 100, the same weights as ArtServer's patch, so SVG output should not change when the patch is removed. Unlike the patch, it also changes font selection: when no face has the exact style name, the engine takes the nearest weight by `style_weight` (`crates/text/src/fontdb.rs:2250` at v0.13.1), which now knows the W weights. That is checked when moving to that release.
 
 - `vendor/README.md` and `vendor/README.ja.md`; design policy chapter 8.
+
+## 2026-10-21 Measuring what one ArtServer process costs
+
+### Policy
+
+The project owner asked whether process isolation (design policy chapter 12) is worth having for a server that keeps running when one job fails, and agreed to decide after measuring what one process costs and after the check with real files from other apps. One process per session is the first candidate (section 12.3), and section 12.5 named the font initialization cost as a concern. The measurement was made from outside: scripts kept outside the repository started the release build and called it over HTTP, with the MCP requests of the README's curl example (`MCP-Protocol-Version: 2025-06-18`). Nothing in the repository was changed.
+
+### Environment
+
+| Item | Details |
+|---|---|
+| Machine | Apple M3, 8 cores, 24 GB of memory, macOS 26.7.1 |
+| Build | `target/release/artserver` at `0820c25`, default settings |
+| Fonts | 432 font files in the folders VectorCraft scans (`/System/Library/Fonts` 370, `/System/Library/AssetsV2/com_apple_MobileAsset_Font8` 59, `~/Library/Fonts` 3, `/Library/Fonts` none); `list_fonts` lists 379 families |
+| Memory figures | RSS from `ps`, and the maximum RSS and peak memory footprint from `/usr/bin/time -l` |
+
+### Results
+
+Time, in three runs (the first with the disk cache cold):
+
+| Item | Result |
+|---|---|
+| From starting the process to `/healthz` answering | 23 ms, then 6 ms and 6 ms |
+| From starting the process to the first `list_fonts` answering. The font scan starts in the background at startup (`src/lib.rs:139`), and the first lookup waits for it | 161 ms, then 39 ms and 40 ms |
+| A second `list_fonts` | 1 ms |
+| A document with 20 ellipses and one Japanese text (Hiragino Sans) | 96 ms, then 13 ms and 13 ms |
+| Exporting it as PNG / PDF | About 20 ms / 2–4 ms |
+
+Memory of one session, step by step (RSS, MiB; putting the three fonts in the other order changed them little):
+
+| Step | Increase | Total |
+|---|---|---|
+| Started, with one session | | 18.1 |
+| `list_fonts` | +2.1 | 20.2 |
+| `document_new` and 20 ellipses | +1.8 | 22.0 |
+| Text in Inter (built in) | +0.9 | 22.9 |
+| Text in Helvetica Neue | +4.4 | 27.3 |
+| Text in Hiragino Sans | +57.0 | 84.3 |
+| The first rendering (`render_preview`) | +74.3 | 158.6 |
+| Two PNG exports | +1.6 | 160.2 |
+| PDF export | +14.7 | 174.9 |
+| SVG export, `session_close` | +0.4 | 175.3 |
+
+- The first rendering adds about 74 MiB without any text too (a run with the ellipses only: +73.8 MiB, 101 MiB in all after the exports). What it holds was not investigated.
+- Hiragino Sans adds the size of its ten files, W0 to W9 (56.5 MiB): the engine reads every installed file of a family into memory the first time the family is used (`load_family_files`, `crates/text/src/fontdb.rs:2118`; files are read with `std::fs::read`, `:1021`). Each further family used adds its files likewise.
+- In one process, sessions share the fonts and the rendering caches: seven more sessions doing the same work (a document with ellipses and Japanese text) added 0.15 MiB each. Eight such sessions: 161 MiB at most (RSS), peak memory footprint 147 MiB. The footprint is close to the RSS, so this memory is the process's own, not file pages other processes could share. The RSS didn't go down after `session_close`.
+
+What this means for process isolation:
+
+- Starting a process and scanning the fonts cost tens of milliseconds on this Mac, so the font initialization cost section 12.5 worried about is small here. A machine with many more fonts, Linux and Windows were not measured.
+- Memory is the cost. With one process per session, each process pays the fonts and the rendering caches itself: about 100 MiB once it renders, about 160–175 MiB with Japanese text and a PDF export. Eight sessions would take about 1.3 GB, against about 160 MiB in one process today.
+- The document was small. The memory of large documents read from real files grows the same way in both forms.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo build --release --offline --locked` | Built in 3 min 47 s |
+| A script measuring startup, the font scan, the document, the exports and eight sessions (three runs) | The figures above |
+| A script printing the RSS after each step (the three fonts in two orders, and once without text) | The figures above |
+
+### Next steps
+
+1. Check from Claude Code in a new conversation (`RUST_LOG=debug`): opening and placing, through uploads, real files from other apps (`.ai` files saved by Illustrator and PDFs from other apps; ArtServer's own `.ai` and PDF exports were already checked in Illustrator), whether the AI finds and uses the opened commands, prefers installed fonts to the `bundled` ones and calls `session_close`, and the MCP protocol version it uses. Also note whether reading a file makes the server crash or hang, how long it takes and the most memory it uses. Note what turns out to be missing
+2. Not decided: process isolation, after step 1. Discussed: a startup option choosing between today's threads and worker processes, with today's form as the default
+3. Not decided: a test of the 2026-07-28 version (`server/discover` and per-request metadata)
