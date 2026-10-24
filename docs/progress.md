@@ -1383,13 +1383,12 @@ The project owner restarted ArtServer with the new build (`target/debug/artserve
 
 The warning comes from a change in v0.14.0 that is not about the weights: the SVG export adds a generic family to `font-family` (upstream #3135, `0f855be7`), so `'Hiragino Mincho ProN'` of v0.13.1 (`sample.svg` of 2026-10-18) is now `'Hiragino Mincho ProN', serif`, and Hiragino Sans gets `, sans-serif`. Upstream added it so that viewers without the font draw the right kind of face. Illustrator seems to look for `serif` as a font; why `sans-serif` isn't listed is not known. Only the SVG and CSS export write it (`crates/svg/src/css.rs:117`); `.ai` and PDF are written by the PDF backend, which names the fonts themselves, and the `.ai` has no `serif` anywhere. Upstream `main` (`8bf090b`) still writes it.
 
-The project owner decided to note in the README that a file to edit in Illustrator should be exported as `.ai`, and SVG is for browsers and other viewers, without reporting to VectorCraft or patching ArtServer. The README is not changed yet.
+The project owner decided to note in the README that a file to edit in Illustrator should be exported as `.ai`, and SVG is for browsers and other viewers, without reporting to VectorCraft or patching ArtServer. The note is in "Known limitations" of `README.md` and `README.ja.md`.
 
 ### Next steps
 
-1. Not done yet: the README note on SVG in Illustrator (above)
-2. Not decided: the tokio advisory (RUSTSEC-2026-0386): raise tokio to 1.53.3 or later
-3. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
-4. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
-5. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
-6. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+1. Not decided: the tokio advisory (RUSTSEC-2026-0386): raise tokio to 1.53.3 or later
+2. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
+3. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+4. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
+5. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified

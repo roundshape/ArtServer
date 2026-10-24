@@ -272,6 +272,7 @@ A client that can't run commands, such as Claude Desktop, can give you the URL i
 - Rate limiting is not implemented.
 - **Files sent for import are read in the same process.** A broken or malicious file could stop the whole server, so send only files from people you trust ([design policy, section 12.4](docs/design-policy.md)).
 - No Japanese fonts are bundled. ArtServer uses the fonts installed in the server's OS (such as Hiragino on macOS) or the fonts in the folders given with `--font-dirs`. A Linux server needs Japanese fonts installed.
+- **Illustrator warns about fonts when it opens an exported SVG.** SVG export names each font with a generic family after it (such as `'Hiragino Mincho ProN', serif`), so that browsers without the font show the same kind of face, and Illustrator reports `serif` as a missing font. Apart from the warning, the text showed correctly (checked on 2026-10-25). Export files to edit in Illustrator as `.ai`, which opens without the warning; SVG is for browsers and other viewers.
 - Output files record "VectorCraft" (in the PDF Producer, for example).
 
 ## Tests
