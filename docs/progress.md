@@ -1292,3 +1292,44 @@ Two open points of the check from Claude Code, looked at before changing anythin
 2. Not decided: whether to report to VectorCraft that an `.ai` without PDF compatibility, placed or opened with pages, comes in as its notice page reported as a success
 3. Not decided: whether to do anything about previews' transparent background
 4. Not decided: process isolation
+
+## 2026-10-22 The last two items of the check from Claude Code: text styles, and the desktop app
+
+### Policy
+
+The two items the entries before left untried, done on 2026-10-21 after them in the same way as the check from Claude Code: the project owner made the requests in a Claude Code started in the folder of the test files, with the same release build, and the server's log was read afterwards. The project owner opened the files the AI wrote in Illustrator and in the VectorCraft desktop app. Nothing in ArtServer was changed.
+
+### Results
+
+| Request | What the AI did | Result |
+|---|---|---|
+| Make character styles from the two texts of `PDF互換.ai`, apply them, and export `.ai` | Its first call used the session of the request before, closed by then for being unused; it made a new one and opened the file. `charStyle.list`, then one atomic `command_batch`: `charStyle.new` 見出し from "ArtServer テスト" and 本文 from "Hello, Illustrator", and `charStyle.apply` of each to its text. It looked at the text with `document.node`, put the tracking of "テ" back to −50 with `text.setRangeStyle` (`start` 10, `end` 13; see below) and exported `.ai`. It then sent that file back through an upload, opened it and listed the styles | In ArtServer the styles survive the export: 見出し Hiragino Sans W6 28 pt, 本文 Helvetica Neue 18 pt. In Illustrator "ArtServer テスト" is three text objects (see below) |
+| Draw a picture and export `.vectorcraft` | `document_new` "秋の夜" 600 × 400 pt; one atomic `command_batch` of shapes (a sky in a gradient, 22 stars, a moon, hills and trees); `pathfinder` `minusFront` for the moon's shape; `add_text` "秋の夜" in Hiragino Mincho ProN 36 pt and a caption in Helvetica Neue 9 pt; tracking 200 on the caption with `text.setStyle`; `export_document` `.vectorcraft`; then the file sent back through an upload, opened and previewed | Opens in ArtServer as drawn. The VectorCraft desktop app (`/Applications/VectorCraft.app`, 0.13.1) opens it with the notice 「見つからないフォント: Hiragino Mincho ProN Regular — W3 で代用」 (see below) |
+
+Findings:
+
+- **In Illustrator, "ArtServer テスト" came in as three text objects, one for each run.** "ArtServer テスト" in `PDF互換.ai` is one text in Illustrator, with kerning before "ス". Opened in ArtServer without the AI touching it, it is one text of three runs, "ArtServer ", "テ" and "スト", "テ" with tracking −50: the engine reads the file's PDF part, where that kerning is a move between pieces of text. `charStyle.apply` to the whole text made it one run with tracking 0. The AI saw the change of look and put −50 back on "テ" (`start` and `end` are UTF-8 byte offsets, VectorCraft `crates/engine/src/cmd/typecmd.rs:444`), which made three runs again. VectorCraft writes each run as a text block of its own (`BT` … `ET`) in the PDF part: `PDF互換_文字スタイル.ai` has three blocks for that text and one for "Hello, Illustrator", and `PDF互換.pdf` of the check before, where the AI didn't touch that text, has the same three. The export holds none of Illustrator's own data (`AIPrivateData`), so the PDF part is what Illustrator reads. Runs, blocks and objects agree in this one file, but that Illustrator makes one object of each block is not established: Illustrator's own `PDF互換.ai` has both texts in a single block of its PDF part and still shows two texts, yet Illustrator opens that file from its own data, so it says nothing about how a PDF part is read. A text of one run was not tried in Illustrator: the title "PDF互換テスト" of `PDF互換.pdf`, styled only as a whole, is one block with its spacing inside it (`TJ`), but that file was not opened in Illustrator. What this check shows is that putting the look back made the text come apart in Illustrator; whether some way keeps both is not known. The AI knew how to style part of a text; what it can't see is how Illustrator shows the file.
+- **The character styles are only in ArtServer's own data in the `.ai`.** Illustrator reads the PDF part, so they are not expected to show there; not looked at in Illustrator.
+- **A font given without a style keeps the style "Regular".** `add_text` passes only the family (`font`) to `text.create` and has no style argument (VectorCraft `crates/mcp/src/tools.rs:710`). `text.create` and `text.setStyle` change the style only when one is given (`crates/engine/src/cmd/create.rs:583-588`, `typecmd.rs:574-579`), so the text keeps the default "Regular" (`crates/doc/src/text.rs:257`). `text.setRangeStyle`, by contrast, takes the family's closest style when the family has no face of the old one (`crates/engine/src/cmd/textedit.rs:459-470`). The same code is in v0.14.0. `秋の夜.vectorcraft` stores Hiragino Mincho ProN "Regular", but that family has only W3 and W6. ArtServer draws it with the nearest weight without a word (`crates/text/src/fontdb.rs:2250`), so its preview looked right; the desktop app reports the font as missing and draws W3, which looks the same. The caption's Helvetica Neue has a Regular face, so no notice came for it. Giving the style (`text.setStyle` with `style` "W3", or `text.create` with `style`) would avoid the notice.
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| The server's log read for each tool call | The calls above |
+| A script inflating the content streams of `PDF互換_文字スタイル.ai` and `PDF互換.pdf` and listing their text blocks | In both, three blocks for "ArtServer テスト" (10, 1 and 2 glyphs) and one for "Hello, Illustrator"; `PDF互換.pdf` also has one for its title "PDF互換テスト" |
+| On 2026-10-24, the script written again and run on these two and on `PDF互換.ai`, and the log read for the title of `PDF互換.pdf` | The two exports as above, neither with `AIPrivateData`. The title's block has spacing inside it (`TJ`); the AI made the title with `add_text` and gave it W6 with `text.setStyle` without `start` or `end`. `PDF互換.ai`: "ArtServer テスト" and "Hello, Illustrator" in one block, and `AIPrivateData` |
+| `gzip -dc` of `秋の夜.vectorcraft` | The title's style: `"font_family":"Hiragino Mincho ProN","font_style":"Regular"` |
+| `fc-list` | Hiragino Mincho ProN has W3 and W6 |
+| `gh api` for `crates/mcp/src/tools.rs` and `crates/engine/src/cmd/typecmd.rs` at v0.14.0 | `add_text` and `text.setStyle` as at v0.13.1 |
+
+### Next steps
+
+1. VectorCraft v0.14.0 was released on 2026-10-21 at 07:46 UTC, with the fix of the Japanese weights (PR #2896): raise the pin, remove `vendor/vectorcraft-svg` and its `[patch]`, classify the new commands, check the weight selection, and see whether the points below still happen with it
+2. Not decided: what to do about Illustrator splitting a text (a README note, a line in the AI's instructions, a report to VectorCraft, or nothing). The project owner tests more cases in Illustrator first
+3. Not decided: what to do about the "Regular" style (a report to VectorCraft, telling the AI to give a style, or nothing)
+4. Not decided: whether to report to VectorCraft that an `.ai` without PDF compatibility, placed or opened with pages, comes in as its notice page reported as a success. It could go with 2 and 3
+5. Not decided: whether to do anything about previews' transparent background
+6. Not decided: process isolation
+7. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
+8. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
