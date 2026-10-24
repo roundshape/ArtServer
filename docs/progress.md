@@ -1392,3 +1392,33 @@ The project owner decided to note in the README that a file to edit in Illustrat
 3. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
 4. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
 5. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+
+## 2026-10-25 tokio 1.54.1 for RUSTSEC-2026-0386
+
+### Policy
+
+`cargo deny check` of the entry before failed on RUSTSEC-2026-0386 (tokio 1.53.1: `AsyncFd::new` and related constructors violate I/O safety; fixed in 1.51.6, and in 1.53.3 and later). ArtServer doesn't call `AsyncFd` itself. The VectorCraft crates ArtServer uses don't depend on tokio (in ArtServer's `Cargo.lock` it comes through ArtServer, axum, hyper, rmcp and their helpers); VectorCraft's own `Cargo.lock` has tokio 1.53.1 at v0.13.1 and v0.14.0, and 1.54.0 at v0.16.0 and `main` (bumped along with craft-window in `cb0a7d9`, not for the advisory; 1.54.0 is yanked). The project owner chose to follow VectorCraft's 1.54 line: 1.54.1 (2026-10-21, the latest; not 1.53.3, the smallest change). `Cargo.toml` keeps `tokio = "1"`.
+
+### What changed and how it was handled
+
+| Item | Details |
+|---|---|
+| `Cargo.lock` | Only tokio's entry: 1.53.1 → 1.54.1, and its checksum (`b52fd32…`, the same as crates.io's). `cargo update -p tokio --precise 1.54.1` also moved six unrelated crates (errno, quinn-udp, rustix, rustls-platform-verifier, tempfile and winapi-util) from windows-sys 0.61.2 to 0.52.0, both already in the lock, which only matters on Windows. So `Cargo.lock` was restored and only tokio's entry was changed; tokio's dependency list is the same in 1.53.1 and 1.54.1, and the builds with `--locked` below accept the file |
+| License notices | Regenerated: only the tokio line changed |
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo build --locked` | Succeeded in 15 s (tokio, tokio-util, tokio-stream and artserver rebuilt), no warnings |
+| `cargo test --locked` | All 82 passed |
+| `cargo clippy --all-targets --locked` / `cargo fmt --check` | No warnings / no changes |
+| `cargo deny check` | advisories, bans, licenses and sources ok, no warnings |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | Succeeded |
+
+### Next steps
+
+1. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
+2. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+3. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
+4. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified

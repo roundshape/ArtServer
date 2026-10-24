@@ -4184,7 +4184,7 @@ Used by:
 
 - [tokio-stream 0.1.19](https://github.com/tokio-rs/tokio)
 - [tokio-util 0.7.20](https://github.com/tokio-rs/tokio)
-- [tokio 1.53.1](https://github.com/tokio-rs/tokio)
+- [tokio 1.54.1](https://github.com/tokio-rs/tokio)
 
 ```text
 MIT License
