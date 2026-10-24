@@ -17,7 +17,7 @@ with `deny.toml`).
 
 ## VectorCraft
 
-- Source: https://github.com/storytold/vectorcraft (v0.13.1, commit `904f0fe5227bd987d55319e89a38b4b8f046998c`; `vectorcraft-svg` is a patched copy in `vendor/`)
+- Source: https://github.com/storytold/vectorcraft (v0.14.0, commit `ad0566943ab9741e6356bbc9b53c3cc09895068d`)
 - Crates used: `vectorcraft-engine`, `vectorcraft-render`, `vectorcraft-text` and the internal crates they depend on
 - License: MIT OR Apache-2.0
 - Copyright (c) 2026 ArtCraft Team and the VectorCraft contributors
@@ -4039,28 +4039,28 @@ SOFTWARE.
 
 Used by:
 
-- vectorcraft-affinity 0.13.1
-- vectorcraft-brush 0.13.1
-- vectorcraft-cad 0.13.1
-- vectorcraft-color 0.13.1
-- vectorcraft-doc 0.13.1
-- vectorcraft-effects 0.13.1
-- vectorcraft-engine 0.13.1
-- vectorcraft-eps 0.13.1
-- vectorcraft-format 0.13.1
-- vectorcraft-geom 0.13.1
-- vectorcraft-mcp 0.13.1
-- vectorcraft-metafile 0.13.1
-- vectorcraft-pathops 0.13.1
-- vectorcraft-pdf 0.13.1
-- vectorcraft-plugins 0.13.1
-- vectorcraft-render 0.13.1
-- vectorcraft-scriptcheck 0.13.1
-- vectorcraft-text 0.13.1
-- vectorcraft-three-d 0.13.1
-- vectorcraft-tools 0.13.1
-- vectorcraft-trace 0.13.1
-- vectorcraft-svg 0.13.1
+- vectorcraft-affinity 0.14.0
+- vectorcraft-brush 0.14.0
+- vectorcraft-cad 0.14.0
+- vectorcraft-color 0.14.0
+- vectorcraft-doc 0.14.0
+- vectorcraft-effects 0.14.0
+- vectorcraft-engine 0.14.0
+- vectorcraft-eps 0.14.0
+- vectorcraft-format 0.14.0
+- vectorcraft-geom 0.14.0
+- vectorcraft-mcp 0.14.0
+- vectorcraft-metafile 0.14.0
+- vectorcraft-pathops 0.14.0
+- vectorcraft-pdf 0.14.0
+- vectorcraft-plugins 0.14.0
+- vectorcraft-render 0.14.0
+- vectorcraft-scriptcheck 0.14.0
+- vectorcraft-svg 0.14.0
+- vectorcraft-text 0.14.0
+- vectorcraft-three-d 0.14.0
+- vectorcraft-tools 0.14.0
+- vectorcraft-trace 0.14.0
 
 ```text
 MIT License

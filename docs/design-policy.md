@@ -44,6 +44,7 @@
   - 2026-10-21 The Linux CI runs `cargo check` on push and skips pushes that change only documents; the full build runs by hand (section 1.1)
   - 2026-10-21 Recorded that Claude Code uses the 2026-07-28 version, and verified that version with an E2E test; rmcp gets `NeverSessionManager` (sections 4.4, 13.2)
   - 2026-10-21 Recorded how an `.ai` saved without PDF compatibility opens and places (section 4.6)
+  - 2026-10-25 Updated VectorCraft to v0.14.0 (`ad05669`) and removed the replacement of `vectorcraft-svg`, fixed upstream in that release (chapter 8)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -512,8 +513,8 @@ If method 2 is chosen, the embedded fonts become fonts that ArtServer distribute
   - This is separate from Option C in section 3.1 (copying all of VectorCraft). Only the crates with bugs are covered, and the diffs are kept small.
   - Also propose the fix upstream, and remove the replacement once it is merged.
   - If the number of fixed crates grows, or fixes keep coming and reapplying the patch becomes hard, switch to a fork of VectorCraft.
-  - Current target: `vectorcraft-svg` (the weights W0–W9 of Japanese fonts do not become SVG `font-weight`; upstream #2873). Upstream fixed it in `main` with PR #2896 (merged 2026-10-18, after v0.13.1), but it is not in a release yet; the replacement is removed when ArtServer moves to the first release that includes it.
-- Referenced commit: v0.13.1 (`904f0fe5227bd987d55319e89a38b4b8f046998c`, updated 2026-10-18). As a rule, it follows release commits.
+  - Current target: none (since 2026-10-25). `vectorcraft-svg` (the weights W0–W9 of Japanese fonts did not become SVG `font-weight`; upstream #2873) was replaced from 2026-10-18. Upstream fixed it with PR #2896, first released in v0.14.0, so the replacement was removed when ArtServer moved to v0.14.0 (`vendor/README.md`).
+- Referenced commit: v0.14.0 (`ad0566943ab9741e6356bbc9b53c3cc09895068d`, updated 2026-10-25). As a rule, it follows release commits.
 
 ---
 

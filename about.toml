@@ -28,7 +28,7 @@ workarounds = ["chrono"]
 [jpeg-encoder]
 accepted = ["IJG"]
 
-# ArtServer itself. Names its license file explicitly, so that VectorCraft's license files under vendor/ aren't counted as ArtServer's
+# ArtServer itself. Names its license file explicitly, so that the license files of VectorCraft crates copied into vendor/ (vendor/README.md) aren't counted as ArtServer's
 [artserver]
 clarify = { license = "MIT", files = [{ path = "LICENSE", license = "MIT", checksum = "3701a8f0da4aaa48c540dfdfa7f0011e823f033f144e3e9ecadc3f4cbd67640e" }] }
 
@@ -71,8 +71,7 @@ clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", licens
 [vectorcraft-scriptcheck]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-svg]
-# The patched copy in vendor/ (vendor/README.md). Its license files are copied too
-clarify = { license = "MIT OR Apache-2.0", files = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
+clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-text]
 clarify = { license = "MIT OR Apache-2.0", git = [{ path = "LICENSE-MIT", license = "MIT", checksum = "8b6025dc4b707e0fb08b9c2054096f1be3ae61529399aa2c348dec676562dc71" }] }
 [vectorcraft-three-d]

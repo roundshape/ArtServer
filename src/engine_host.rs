@@ -661,7 +661,7 @@ mod tests {
 
     #[tokio::test]
     async fn japanese_weight_names_reach_the_svg() {
-        // The vendor/vectorcraft-svg fix: W0–W9 style names become the SVG's font-weight.
+        // W0–W9 style names become the SVG's font-weight (upstream #2873, fixed in VectorCraft v0.14.0; vendor/README.md).
         // The SVG gets a value decided only by the given style name, so the result is the same where the fonts aren't installed
         let dir = tempfile::tempdir().unwrap();
         let host = host_with_document(&dir).await;

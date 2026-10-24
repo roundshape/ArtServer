@@ -1333,3 +1333,63 @@ Findings:
 6. Not decided: process isolation
 7. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
 8. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+
+## 2026-10-25 Updated VectorCraft to v0.14.0, and removed the `vectorcraft-svg` replacement
+
+### Policy
+
+The project owner's local VectorCraft clone was pulled to `8bf090b` (main, 492 commits after v0.16.0); the latest release is v0.16.0 (`1019075`, 2026-10-22). Reading v0.13.1 against v0.16.0 showed two changes that need ArtServer's code changed, both first released in v0.15.0: `AutomationRoots::new` takes lists of folders instead of one, and `draw_shape` and `draw_path` run the creation and styling as one `command.batch` (upstream #3545), a command ArtServer's allowlist refuses, so both tools would fail. The project owner wants upstream's fix of the Japanese font weights to replace ArtServer's patch, so the update is split in two: first v0.14.0 (`ad0566943ab9741e6356bbc9b53c3cc09895068d`, 2026-10-19, 460 commits after v0.13.1), the first release with the fix (PR #2896, `eec304d`) and without those two changes, with the patch removed; then v0.16.0. This way the first step changes only who fixes the weights.
+
+Before the change, the code was searched for other fixes of VectorCraft bugs made in ArtServer: there are none. What ArtServer adds is not a bug fix and is still missing upstream in v0.16.0, so it stays: `list_fonts` (VectorCraft's tools still have no font list) and the check of unknown arguments (`src/engine_host.rs:316`; the engine still checks them only in its own tests). `[patch.crates-io]` (the PDF backend) is VectorCraft's own setting copied over, the same craft-libs `ca50d63` in v0.14.0 and v0.16.0.
+
+Upstream's fix compared with the patch, by reading the code of v0.14.0 and v0.16.0: the SVG export writes a text's weight through `font_props` → `font_descriptor` (`crates/svg/src/css.rs`) → `style_weight` (`crates/text/src/fontdb.rs`), and `style_weight` now reads "W" and one digit as the digit × 100, at least 100, as the patch did in `font_descriptor`. The weights are the same for W0–W9. Upstream splits the style name at any character that is not an ASCII letter or digit (the patch: spaces, `-` and `_`), and its fix also reaches font selection (the nearest weight, and `is_bold` of craft-fonts counts W6 and above as bold). Upstream's test `crates/svg/tests/font_weights.rs` exports SVG and checks W0 100, W3 300, W4 none, W6 600 and W9 900.
+
+### What changed and how it was handled
+
+| Item | Details |
+|---|---|
+| commit | Raised the 5 VectorCraft entries in `Cargo.toml` to `ad05669` (v0.14.0) |
+| `vendor/vectorcraft-svg` | Removed, with `vendor/patches/vectorcraft-svg.diff` and `[patch."https://github.com/storytold/vectorcraft"]` in `Cargo.toml`. `vendor/README.md` and `vendor/README.ja.md` now say that no crate is patched, list the removed patch, and keep how to make a copy and the steps for updating |
+| `Cargo.lock` | Only the 22 VectorCraft crates changed (0.13.1 → 0.14.0, and the rev); `vectorcraft-svg` now comes from GitHub. No other crate moved |
+| PDF patches and build settings | Same in VectorCraft v0.14.0 (craft-libs `ca50d63`; the workspace adds only the `tga` feature of `image`). Unchanged |
+| ArtServer's code | No changes needed. The comment of the weight test (`src/engine_host.rs:664`) now points to upstream's fix |
+| New commands in v0.14.0 | 7: `edit.clearHistory`, `library.moveGroup`, `object.objectsOnPath.attach`, `object.objectsOnPath.expand`, `object.objectsOnPath.options`, `path.moveAnchor`, `select.color`. Not on the allowlist, so closed; classified with v0.16.0's |
+| License notices | `about.toml`: `vectorcraft-svg` reads its license from GitHub like the other VectorCraft crates. `about.hbs`: the VectorCraft entry. Regenerated |
+| Documents | Design policy chapter 8 (no replacement at present; the referenced commit) and its revisions; `docs/architecture.md` (the referenced commit) |
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `git diff v0.13.1 v0.16.0` and others in the local VectorCraft clone (no fetch) | As in the policy above. No allowlisted command was removed or renamed up to v0.16.0 |
+| `cargo build` (online, updating `Cargo.lock`) | Succeeded in 1m 11s, no warnings |
+| `git diff Cargo.lock` | As in the table above |
+| `cargo test --locked` | All 82 passed (55 unit, 25 E2E, 2 for the PDF backend). `japanese_weight_names_reach_the_svg` passed without the patch: Hiragino Sans W6 `font-weight="600"`, Hiragino Mincho ProN W3 `300`, Inter Regular none, Source Sans 3 Bold `bold` |
+| `cargo clippy --all-targets --locked` / `cargo fmt --check` | No warnings / no changes |
+| `cargo deny check` | bans, licenses and sources ok; **advisories failed**: RUSTSEC-2026-0386 (tokio, `AsyncFd::new` and related constructors violate I/O safety; fixed in 1.51.6 and 1.53.3). `Cargo.lock` has tokio 1.53.1, unchanged by this update; the advisory is new since the last check. ArtServer doesn't use `AsyncFd` itself |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | Succeeded. Only the VectorCraft entry and the crate versions changed |
+
+### Checking the weights with the new build
+
+The project owner restarted ArtServer with the new build (`target/debug/artserver`, built 08:17, started 08:26), and the tools were used from Claude Code. One document of 600 × 460 pt, made with one atomic `command_batch` of `text.create` with a `style`: Hiragino Sans W1, W3, W6 and W9, Hiragino Mincho ProN W3 and W6, and two Hiragino Mincho ProN texts in styles the family lacks, "Regular" and "Bold". It was exported as SVG, PDF, PNG and `.ai` to `~/Desktop/artserver-output/v0140-weight-check.*`; the project owner opened the SVG and the `.ai` in Illustrator.
+
+| Check | Result |
+|---|---|
+| `render_preview` | Each text in its weight. "Regular" drawn in W3 and "Bold" in W6 (the nearest weights) |
+| `font-weight` in the SVG | Hiragino Sans W1 `100`, W3 `300`, W6 `600`, W9 `900`; Hiragino Mincho ProN W3 `300`, W6 `600`; "Regular" none, "Bold" `bold` |
+| Fonts in the PDF and the `.ai` | HiraginoSans-W1, W3, W6, W9 and HiraMinProN-W3, W6, and no others: "Regular" was set in W3 and "Bold" in W6 |
+| SVG in Illustrator | The weights look right. **Illustrator warns on opening**: 「ドキュメントで使用されているフォントは、システムにないか、形式が異なります。」 listing 「serif:」, with 「一部の字体切り換え文字は、このバージョンの Illustrator では使用できません。」 |
+| `.ai` in Illustrator | No warning |
+
+The warning comes from a change in v0.14.0 that is not about the weights: the SVG export adds a generic family to `font-family` (upstream #3135, `0f855be7`), so `'Hiragino Mincho ProN'` of v0.13.1 (`sample.svg` of 2026-10-18) is now `'Hiragino Mincho ProN', serif`, and Hiragino Sans gets `, sans-serif`. Upstream added it so that viewers without the font draw the right kind of face. Illustrator seems to look for `serif` as a font; why `sans-serif` isn't listed is not known. Only the SVG and CSS export write it (`crates/svg/src/css.rs:117`); `.ai` and PDF are written by the PDF backend, which names the fonts themselves, and the `.ai` has no `serif` anywhere. Upstream `main` (`8bf090b`) still writes it.
+
+The project owner decided to note in the README that a file to edit in Illustrator should be exported as `.ai`, and SVG is for browsers and other viewers, without reporting to VectorCraft or patching ArtServer. The README is not changed yet.
+
+### Next steps
+
+1. Not done yet: the README note on SVG in Illustrator (above)
+2. Not decided: the tokio advisory (RUSTSEC-2026-0386): raise tokio to 1.53.3 or later
+3. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
+4. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+5. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
+6. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified

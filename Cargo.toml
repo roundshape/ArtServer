@@ -9,13 +9,13 @@ publish = false
 
 [dependencies]
 # The VectorCraft engine, pinned to a commit (docs/design-policy.md chapter 8)
-vectorcraft-engine = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
-vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
-vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-engine = { git = "https://github.com/storytold/vectorcraft", rev = "ad0566943ab9741e6356bbc9b53c3cc09895068d" }
+vectorcraft-render = { git = "https://github.com/storytold/vectorcraft", rev = "ad0566943ab9741e6356bbc9b53c3cc09895068d" }
+vectorcraft-text = { git = "https://github.com/storytold/vectorcraft", rev = "ad0566943ab9741e6356bbc9b53c3cc09895068d" }
 # Only the tool part of VectorCraft's MCP (call_tool and Backend; docs/design-policy.md section 4.7)
-vectorcraft-mcp = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-mcp = { git = "https://github.com/storytold/vectorcraft", rev = "ad0566943ab9741e6356bbc9b53c3cc09895068d" }
 # The native .vectorcraft format, to tell uploaded files in it from their contents (src/uploads.rs)
-vectorcraft-format = { git = "https://github.com/storytold/vectorcraft", rev = "904f0fe5227bd987d55319e89a38b4b8f046998c" }
+vectorcraft-format = { git = "https://github.com/storytold/vectorcraft", rev = "ad0566943ab9741e6356bbc9b53c3cc09895068d" }
 
 # MCP (the official Rust SDK). Pinned to the minor version, because the transport sometimes changes between minor versions
 rmcp = { version = "~3.5", features = ["server", "macros", "transport-streamable-http-server"] }
@@ -66,7 +66,3 @@ hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63
 hayro-interpret = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
 krilla = { git = "https://github.com/storytold/craft-libs", rev = "ca50d63b773c99f96e75c77ce5a1d21e7c9cda0d" }
-
-# VectorCraft crates fixed by ArtServer. The fixes and how to reapply them are in vendor/README.md
-[patch."https://github.com/storytold/vectorcraft"]
-vectorcraft-svg = { path = "vendor/vectorcraft-svg" }
