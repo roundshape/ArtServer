@@ -1552,3 +1552,41 @@ The project owner restarted ArtServer with the new build (`target/debug/artserve
 3. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
 4. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
 5. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+
+## 2026-10-25 A font style the family doesn't have: reported upstream as #4128
+
+### What was found
+
+Text made with `add_text` in Hiragino Mincho ProN or Hiragino Sans, with no font style named, opened in the desktop app (0.16.0) with Missing Fonts: "Hiragino Mincho ProN Regular — W3 で代用", "Hiragino Sans Regular — W4 で代用". Drawing, PNG and PDF were right (W3 and W4), but the `.vectorcraft` kept the font style "Regular", which neither family has. "Font style" here is the face that the Character panel's font style menu shows (W3, W6, Regular, Bold…; `CharStyle::font_style`), not a character style of the Character Styles panel (`charStyle.*`).
+
+Read in the engine (v0.16.0): `text.create` and `text.createInPath` start from the default "Regular" and keep it when only `font` is given (`new_type_style`, `crates/engine/src/cmd/create.rs`); `text.setStyle` keeps the text's previous font style (`set_style`, `crates/engine/src/cmd/typecmd.rs`). Only `text.setRangeStyle` takes the family's closest font style when the family lacks the one kept (`CharChange::apply`, `crates/engine/src/cmd/textedit.rs:499-511`). `add_text` has no `style` argument, so text in any family without "Regular" (Hiragino W0–W9, Morisawa and the like) gets this when no font style is named.
+
+The project owner's view: when a request doesn't name a full face, text in an equivalent face is fine, even if the AI's choice varies a little; a font style that isn't installed is not.
+
+### Checked in a scratch copy
+
+In a document of 500 × 320 pt: two texts with `add_text` (Hiragino Mincho ProN, Hiragino Sans), a text made in Helvetica Neue Medium and moved to Hiragino Mincho ProN with `text.setStyle`, and the same with `text.setRangeStyle`.
+
+| | Stored font styles | PDF export | Live-text SVG | Desktop app |
+|---|---|---|---|---|
+| v0.16.0 | Regular, Regular, Medium, W6 | Warned that three font styles were drawn in the closest one (W3, W4, W6) | `font-weight` 500 for Medium, drawn in W6 | Missing Fonts (the project owner, for a file of the two `add_text` texts) |
+| Patched | W3, W3, W6, W6 | No warning | Weights match the PDF (300, 300, 600, 600) | Opened without a notice (the project owner) |
+
+The patch applies `CharChange::apply`'s rule in `new_type_style` and `set_style` when `font` is given without `style`. It was made in a copy of VectorCraft v0.16.0, with a copy of ArtServer `46b7fe7` pointing its 22 VectorCraft crates at it through `[patch]`, both outside the repository; `cargo build` there succeeded in 1m 44s, and the project owner ran ArtServer from that build. A text in Helvetica Neue (which has Regular) kept Regular, and a text made with W6 named kept W6. The project owner's own request from another Claude Code (ヒラギノ明朝で「秋の夜長」、ヒラギノ角ゴで「読書の秋」) gave W3 and W3, and the file opened without a notice.
+
+Seen but not verified: Hiragino Sans was drawn in W4 before the patch and stored as W3 after it. VectorCraft's `FontDb` picks the closest face among the faces it has already loaded (`face` and `find`), and another Claude Code had used Hiragino Kaku Gothic ProN W3 (in the same file as Hiragino Sans W3) in between, so the choice may depend on what the server used before. The project owner accepts this variation, and it was left out of the report.
+
+### Reported upstream
+
+storytold/vectorcraft#4128, posted by the project owner (2026-10-25 20:29), with the steps, the results, the Missing Fonts dialog and the diff. Related: #3229 (a font style the caller names that the family doesn't have). ArtServer changes nothing: the fix belongs in the engine, and ArtServer follows upstream.
+
+The Linux CI (run 40150759011) and the Windows build (run 40151171676, by hand; 15m 33s, 14m 19s of it the build) of `46b7fe7` succeeded.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. The project owner restarts ArtServer from the repository's build; the scratch copy (about 7.3 GB) is deleted on the project owner's word
+3. Not decided: GitHub's secret scanning and Dependabot alerts
+4. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+5. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
+6. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
