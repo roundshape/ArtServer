@@ -275,6 +275,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 - **Files sent for import are read in the same process.** A broken or malicious file could stop the whole server, so send only files from people you trust ([design policy, section 12.4](docs/design-policy.md)).
 - No Japanese fonts are bundled. ArtServer uses the fonts installed in the server's OS (such as Hiragino on macOS) or the fonts in the folders given with `--font-dirs`. A Linux server needs Japanese fonts installed.
 - **Illustrator warns about fonts when it opens an exported SVG.** SVG export names each font with a generic family after it (such as `'Hiragino Mincho ProN', serif`), so that browsers without the font show the same kind of face, and Illustrator reports `serif` as a missing font. Apart from the warning, the text showed correctly (checked on 2026-10-25). Export files to edit in Illustrator as `.ai`, which opens without the warning; SVG is for browsers and other viewers.
+- **Illustrator splits text when it opens an exported `.ai`.** Illustrator reads ArtServer's `.ai` from its PDF part (it holds none of Illustrator's own editing data), so a text with line breaks comes in as one text per line, and a text with some characters styled differently (a colour, tracking and so on) as one text per stretch of the same style (checked on 2026-10-25). PDF export writes text the same way, so the same is expected there (not checked). ArtServer and VectorCraft open the file with each text whole.
 - Output files record "VectorCraft" (in the PDF Producer, for example).
 
 ## Tests

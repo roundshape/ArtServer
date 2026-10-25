@@ -1705,3 +1705,35 @@ The project owner decided not to report it. ArtServer's advice stays as it is: `
 1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
 2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
 3. Not decided: what to do about Illustrator splitting a text; process isolation
+
+## 2026-10-25 Illustrator splitting texts: a limit of the PDF-compatible `.ai`, noted in the README
+
+### What was checked
+
+The question left open since the entry of 2026-10-22: "ArtServer テスト" came in as three text objects in Illustrator. The project owner asked whether the AI had simply made several texts. `PDF互換_文字スタイル.ai` (the AI's export of 2026-10-21) sent back through an upload and opened (`restored: true`, from its editing data): "ArtServer テスト" is one text (`doc_inspect` with `kind` Type: two texts, the other "Hello, Illustrator"), whose `document.node` shows three runs, "ArtServer ", "テ" (tracking −50) and "スト". The AI had styled part of one text, not made several.
+
+Two test files were made with ArtServer (Hiragino Sans W6 28 pt, `text.create` with `style`, `text.setRangeStyle` on bytes 10 to 13), exported as `.ai`, and their PDF parts read with a script that inflates the content streams and lists the text blocks (`BT` … `ET`). The project owner opened them in Illustrator.
+
+| File (`~/Desktop/artserver-output/`) | Texts | Blocks in the PDF part | Texts in Illustrator |
+|---|---|---|---|
+| `文字の区切りテスト.ai` (400 × 300 pt) | 1. all one style; 2. "テ" with tracking −50; 3. "テ" in red | 1 + 3 + 3 = 7 | 7 |
+| `文字の区切りテスト2.ai` and `.vectorcraft` (400 × 400 pt) | The same three, and 4. "ArtServer テスト", a line break and "改行した二行目", all one style | 1 + 3 + 3 + 2 = 9: text 4 has one block per line | 9 |
+
+So Illustrator makes one text of each block, and VectorCraft writes one block for each stretch of one style on each line. The font's own kerning inside text 1 stays in its one block (`TJ`) and doesn't split it. The `.vectorcraft` keeps four texts.
+
+Why: ArtServer's `.ai` is a PDF with VectorCraft's editing data and none of Illustrator's own data (`AIPrivateData`, which is undocumented), so Illustrator reads the PDF part, as it would any PDF. PDF has no text objects or paragraphs, only text drawn at places. The `.ai` and the PDF export share VectorCraft's PDF writer (`encode_ai` calls `pdf::encode_carrying`, `crates/engine/src/cmd/fileio/save.rs`), so a PDF opened in Illustrator is expected to split the same way; not tried. The project owner judged that this is not a bug of VectorCraft.
+
+### The legacy `.ai` (Illustrator 7.0)
+
+The project owner pointed to the Illustrator 7 format, the one Adobe published. VectorCraft writes it (`aiVersion`, `crates/eps/src/legacy_ai.rs`), with type as text objects and paragraphs, but, by its own comment, only what the published specification documents: fonts are re-encoded to Windows-1252, type with characters outside Windows Latin-1 is written as outlines, transparency is written opaque, and there is one artboard. The project owner noted that Illustrator 7 had a Japanese version, so the outlines are VectorCraft's choice, not a limit of the format. Whether the published specification documents Japanese text was not checked: the server PRONOM links to (`mercator.elte.hu`) didn't answer twice. ArtServer still refuses `aiVersion` other than `pdf` (design policy section 4.6).
+
+### What was done
+
+- `README.md` and `README.ja.md` (Known limitations): Illustrator splits the texts of an exported `.ai`, one text per line and per stretch of one style, because it reads the PDF part; PDF is expected to do the same (not checked); ArtServer and VectorCraft open the file with each text whole.
+- Not reported to VectorCraft.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: whether to ask VectorCraft to write Japanese text in the legacy `.ai`; process isolation
