@@ -37,6 +37,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 rmcp = { version = "~3.5", features = ["client", "transport-streamable-http-client-reqwest"] }
 reqwest = { version = "0.13", features = ["json"] }
+# Reads the pixels of previews in a test. Already in Cargo.lock, through the image crate VectorCraft uses
+png = "0.18"
 
 [lints.rust]
 unsafe_code = "forbid"

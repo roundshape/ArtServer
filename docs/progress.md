@@ -1640,3 +1640,38 @@ Design policy section 13.2 #12 still said that whether Claude Code's AI uses Vec
 1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
 2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
 3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+
+## 2026-10-25 Previews on a white background
+
+### Policy
+
+The check from Claude Code of 2026-10-21 found that `render_preview` returned PNGs with a fully transparent background, shown once over white and once over black, so the AI may take the page for black. The project owner chose a white background, as an artboard looks, over letting the AI choose or leaving it. Only the preview changes: PNGs written by `export_document` still follow the document.
+
+Read in the code before the change: VectorCraft's `render_preview` asks the backend for `ui.render`, and ArtServer's `GuardedBackend::render` (`src/backend.rs`) runs the engine's `document.export` as PNG with only `scale` and `artboard`. The engine's raster export takes `background` (`transparent`, `white`, `black` or a colour); without it, it follows the document's Background Contents, which is transparent by default (VectorCraft v0.16.0 `crates/engine/src/cmd/fileio/encode.rs:507-512`, `crates/doc/src/setup.rs:174-179`). So the transparency came from how ArtServer called the export, not from the engine.
+
+### What changed
+
+| Item | Details |
+|---|---|
+| `src/backend.rs` | `render` passes `"background": "white"` to `document.export`, with the reason in its comment |
+| Test (`src/engine_host.rs`) | `previews_have_a_white_background`: a blue rectangle in a document of 300 × 200 pt, `render_preview` at 200 pixels, and its pixels read: two empty places opaque white, the rectangle opaque blue |
+| `Cargo.toml`, `Cargo.lock` | `png` 0.18 as a dev-dependency, to read the pixels. It was already in the lock (through `image` and others), so `Cargo.lock` gained only `"png"` in ArtServer's own list, written by hand; no crate moved. `cargo deny` and `cargo about` leave dev-dependencies out |
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo test --locked --offline` | All 85 passed (58 unit, 25 E2E, 2 for the PDF backend). The test was not run against the code before the change |
+| `cargo clippy --all-targets --locked --offline` | No warnings |
+| `cargo fmt --check` | The two places added were not formatted; `cargo fmt` changed only those, and the check then passed |
+| `cargo deny --offline check` | advisories, bans, licenses and sources ok |
+
+### Checking from Claude Code
+
+The project owner restarted ArtServer with the new build (`target/debug/artserver`, built 20:58 by the tests). A document of 400 × 300 pt with a green star (`#22aa44`, black stroke 3 pt) and 「背景は白」 in Hiragino Sans, then `render_preview` at 400 pixels: shown on a white background. The PNG itself is RGB with no alpha channel (it was RGBA); its corners are (255, 255, 255) and the star's centre (34, 170, 68). The session was closed.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; process isolation

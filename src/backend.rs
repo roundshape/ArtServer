@@ -41,7 +41,9 @@ impl<'a> GuardedBackend<'a> {
     }
 
     /// Rendering for `render_preview`: one artboard as PNG. It only calls the engine's export with fixed
-    /// arguments, so it doesn't touch files.
+    /// arguments, so it doesn't touch files. The background is white, as an artboard looks: the engine's
+    /// default follows the document and is usually transparent, which a client may show over black, and the
+    /// AI may then take the page for black.
     fn render(&mut self, params: &Value) -> Result<Value, String> {
         let scale = params
             .get("scale")
@@ -51,7 +53,10 @@ impl<'a> GuardedBackend<'a> {
         let artboard = params.get("artboard").and_then(Value::as_u64).unwrap_or(0);
         let out = self
             .session
-            .execute("document.export", &json!({"format": "png", "scale": scale, "artboard": artboard}))
+            .execute(
+                "document.export",
+                &json!({"format": "png", "scale": scale, "artboard": artboard, "background": "white"}),
+            )
             .map_err(|e| e.to_string())?;
         let data = out.get("dataBase64").cloned().ok_or("the renderer returned no image")?;
         Ok(json!({"pngBase64": data}))

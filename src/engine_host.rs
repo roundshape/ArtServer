@@ -634,6 +634,43 @@ mod tests {
         assert_eq!(r.content[0]["type"], "image");
     }
 
+    /// The pixel at (x, y) of a PNG as RGBA.
+    fn pixel(png: &[u8], x: usize, y: usize) -> [u8; 4] {
+        let mut reader = png::Decoder::new(std::io::Cursor::new(png)).read_info().unwrap();
+        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+        let info = reader.next_frame(&mut buf).unwrap();
+        assert_eq!(info.bit_depth, png::BitDepth::Eight);
+        let at = y * info.line_size + x * info.color_type.samples();
+        match info.color_type {
+            png::ColorType::Rgba => [buf[at], buf[at + 1], buf[at + 2], buf[at + 3]],
+            png::ColorType::Rgb => [buf[at], buf[at + 1], buf[at + 2], 255],
+            other => panic!("unexpected colour type {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn previews_have_a_white_background() {
+        let dir = tempfile::tempdir().unwrap();
+        let host = host_with_document(&dir).await;
+        let r = tool(
+            &host,
+            "draw_shape",
+            json!({"shape": "rectangle", "x": 30, "y": 30, "width": 90, "height": 60, "fill": "#3366ff", "stroke": "none"}),
+        )
+        .await;
+        assert!(!r.is_error, "{}", text_of(&r));
+        // 300 × 200 pt at 200 pixels wide: two thirds of a pixel per point
+        let r = tool(&host, "render_preview", json!({"max_side": 200})).await;
+        assert!(!r.is_error, "{}", text_of(&r));
+        let png = base64::engine::general_purpose::STANDARD
+            .decode(r.content[0]["data"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(pixel(&png, 2, 2), [255, 255, 255, 255], "the empty page");
+        assert_eq!(pixel(&png, 180, 120), [255, 255, 255, 255], "the empty page");
+        let [red, _, blue, alpha] = pixel(&png, 50, 40);
+        assert!(alpha == 255 && red < 0x40 && blue > 0xf0, "the rectangle: {:?}", pixel(&png, 50, 40));
+    }
+
     #[tokio::test]
     async fn the_guarded_backend_refuses_what_the_policy_does_not_allow() {
         let dir = tempfile::tempdir().unwrap();
