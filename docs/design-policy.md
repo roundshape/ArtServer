@@ -47,6 +47,7 @@
   - 2026-10-25 Updated VectorCraft to v0.14.0 (`ad05669`) and removed the replacement of `vectorcraft-svg`, fixed upstream in that release (chapter 8)
   - 2026-10-25 Updated VectorCraft to v0.16.0 (`1019075`): `command.batch` is open to VectorCraft's tools with each step checked, and 16 of the 17 new commands are opened (sections 4.7, 6.1; chapter 8)
   - 2026-10-25 Recorded that Claude Code's AI was verified to use the tools (section 13.2)
+  - 2026-10-25 Previews are rendered on a white background (section 4.7)
 - Status: **Adopted (approved by the project owner on 2026-10-17)**
 - Related documents:
   - `docs/DEVELOPMENT_PLAN.md`: development policy and handover document (the original source of goals and constraints)
@@ -312,7 +313,7 @@ AI → ArtServer MCP layer (checks the working session handle)
 | `engine.execute` | Runs after passing the same checks as the current tools (allowlist, file paths, `check_params`, document count limit) |
 | `engine.commands` | Returns only the commands in the allowlist (this becomes the result of `command_list`) |
 | `document.inspect`, `document.node` | Run through the allowlist |
-| `ui.render` | Rendering for previews (used by `render_preview`). Implemented with the engine's PNG export |
+| `ui.render` | Rendering for previews (used by `render_preview`). Implemented with the engine's PNG export, on a white background as an artboard looks (2026-10-25): the engine's default follows the document and is usually transparent, which a client may show over black. `export_document` still follows the document |
 | Everything else (`ui.*`, `app.*`, etc.) | Refused |
 
 - VectorCraft's `Headless` (VectorCraft's own Backend implementation) is not used, because it has entry points for opening and saving files.

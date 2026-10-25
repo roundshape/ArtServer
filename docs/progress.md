@@ -1675,3 +1675,17 @@ The project owner restarted ArtServer with the new build (`target/debug/artserve
 1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
 2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
 3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; process isolation
+
+## 2026-10-25 Design policy 4.7: the white background of previews
+
+### What was done
+
+The row of `ui.render` in design policy section 4.7 now says that previews are rendered on a white background, as an artboard looks, why (the engine's default follows the document and is usually transparent, which a client may show over black), and that `export_document` still follows the document. A line was added to the revisions.
+
+The Linux CI of `9555101` (the entry before; run 40191330958) succeeded.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; process isolation
