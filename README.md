@@ -261,6 +261,8 @@ A client that can't run commands, such as Claude Desktop, can give you the URL i
 - File paths are not accepted. Input and output travel in tool arguments and results. The engine's file access is confined to an empty temporary directory.
 - Sessions, queues, body size, documents, history and run time are limited.
 
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
 ## Known limitations
 
 - **TLS is not implemented.** To expose ArtServer outside, put it behind a reverse proxy that terminates TLS.

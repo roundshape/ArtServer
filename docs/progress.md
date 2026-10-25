@@ -1444,3 +1444,20 @@ Before making the repository public, the project owner had every commit's author
 | Commits before and after | 63 and 63; every commit's tree, author date and committer date the same; messages identical; the last tree identical |
 | Authors and committers after | All `roundshape <99551120+roundshape@users.noreply.github.com>` |
 | Own commit IDs in commit messages | None, so no message needed changing |
+
+## 2026-10-25 A security policy, before going public
+
+### Policy
+
+Before making the repository public, the project owner decided to publish `docs/ARTSERVER_PROCESS_ISOLATION_REVIEW.md` and `docs/DEVELOPMENT_PLAN.md` as they are, and asked for a security policy. Reports go through GitHub's private vulnerability reporting, so no address is published. VectorCraft has no security policy of its own (none in `8bf090b`), so problems in its engine that affect ArtServer are taken here and passed on as needed.
+
+### What was done
+
+- `SECURITY.md` and `SECURITY.ja.md`: the supported version (the latest commit of `main`; no releases yet), how to report (the repository's Security tab › Report a vulnerability) and what to include, best-effort handling without a promised response time, published advisories of dependencies as ordinary issues, and the scope: the intended usage (design policy section 1.1), the kinds of report especially welcome, the known limitations of the README, and VectorCraft's engine.
+- `README.md` and `README.ja.md` (Security): a line pointing to the policy.
+
+### Next steps
+
+1. Not done yet: turning on private vulnerability reporting in the repository's settings; until then the link the policy names doesn't appear
+2. Not done yet: the Windows build of the current `main`, the repository's description, and whether to turn off its unused wiki
+3. Then making the repository public
