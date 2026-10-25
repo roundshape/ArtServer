@@ -1590,3 +1590,17 @@ The Linux CI (run 40150759011) and the Windows build (run 40151171676, by hand; 
 4. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
 5. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
 6. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+
+## 2026-10-25 `artserver-check.vectorcraft` in the desktop app 0.16.0, and the cleanup
+
+### What was done
+
+- The project owner opened `~/Desktop/artserver-output/artserver-check.vectorcraft` (2026-10-19, written by ArtServer with the engine of VectorCraft 0.13.1, format version 4) in the VectorCraft desktop app 0.16.0. It opened without any notice. Its texts are in Helvetica Neue Regular and Hiragino Sans W6, both font styles the families have, so the case of #4128 doesn't arise in it. Whether the look matches `artserver-check-reference.png` was not reported.
+- The project owner restarted ArtServer from the repository's build (`./target/debug/artserver`, 20:35). The scratch copy of the font style patch (`style-patch`, 7.4 GB) was deleted on the project owner's word; no process used it.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. Not decided: GitHub's secret scanning and Dependabot alerts
+3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+4. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
