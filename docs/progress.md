@@ -1737,3 +1737,13 @@ The project owner pointed to the Illustrator 7 format, the one Adobe published. 
 1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
 2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
 3. Not decided: whether to ask VectorCraft to write Japanese text in the legacy `.ai`; process isolation
+
+## 2026-10-25 Japanese text in the legacy `.ai`: not asked of VectorCraft
+
+The project owner decided not to ask VectorCraft to write Japanese text as text in the legacy `.ai` (the entry before). ArtServer keeps writing only the PDF-compatible `.ai`.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: process isolation
