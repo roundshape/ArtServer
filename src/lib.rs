@@ -53,7 +53,7 @@ impl App {
         let limits = &config.limits;
         // Reads only inside the empty directory and no writes at all: in the MVP the engine touches no files
         let sandbox = tempfile::Builder::new().prefix("artserver-").tempdir()?;
-        let roots = AutomationRoots::new(Some(sandbox.path()), None)
+        let roots = AutomationRoots::new(&[sandbox.path()], &[])
             .map_err(std::io::Error::other)?
             .ok_or_else(|| std::io::Error::other("automation roots were not created"))?;
         let engine_limits = EngineLimits {

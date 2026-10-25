@@ -4,7 +4,7 @@
 - Status: **Option A-2 adopted (approved by the project owner on 2026-10-17)**. This document is the investigation record as of Phase 0. From here on, `docs/design-policy.md` is authoritative for the design policy (session handling and other points changed to follow the latest MCP specification). The findings are kept as they were; what was verified or decided later is added after "→" with its date (updated 2026-10-19).
 - Subject: VectorCraft `~/MyTasks/RoundShape/vectorcraft`
   - origin: https://github.com/storytold/vectorcraft.git
-  - commit: `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c` (2026-10-17, v0.12.0 + 335 commits). The `path:line` references below are to this commit → ArtServer references v0.13.1 (`904f0fe`) since 2026-10-18, and v0.14.0 (`ad05669`) since 2026-10-25 (design policy chapter 8)
+  - commit: `fdac986bb49b3e3a9ddd3cda4e88661a6f0aa50c` (2026-10-17, v0.12.0 + 335 commits). The `path:line` references below are to this commit → ArtServer references v0.13.1 (`904f0fe`) since 2026-10-18, v0.14.0 (`ad05669`) and then v0.16.0 (`1019075`) since 2026-10-25 (design policy chapter 8)
 - Method: static reading of the source only. No build or test was run (Rust is not installed on the development machine, as noted below).
 - Reliability order: code → comments → function names. Each `path:line` below is a location in the VectorCraft repository.
 
@@ -276,7 +276,7 @@ The MVP assumes "trusted users and local use", and **states these clearly as kno
 | 5 | Policy for CJK fonts such as Japanese (install on the server / embed with `CRAFT_FONTS_DIR` / add at runtime) | Decide in Phase 2. High priority for print use → **Not done for now (2026-10-19)**: the fonts installed in the OS and `--font-dirs` serve; embedding fonts in the build is not done (design policy section 13.2 #5) |
 | 6 | Handling of "VectorCraft" written into output files (PDF Producer, etc.) | Consider whether to accept it as a statement of origin, or whether it can be overwritten from outside the engine → **Decided (2026-10-19): left as is** (design policy section 13.2 #6) |
 | 7 | Checking the name "ArtServer" for trademark conflicts | Check before release (development plan §7) → **Done (2026-10-19)**: no conflict found in the US and Japan (design policy section 13.2 #7) |
-| 8 | Upstream updates very often, and there is no promise of API stability | Pin the rev and update in a planned way → **Followed**: pinned to a commit, updated to v0.13.1 (`904f0fe`) on 2026-10-18 and to v0.14.0 (`ad05669`) on 2026-10-25 (design policy chapter 8) |
+| 8 | Upstream updates very often, and there is no promise of API stability | Pin the rev and update in a planned way → **Followed**: pinned to a commit, updated to v0.13.1 (`904f0fe`) on 2026-10-18 and to v0.14.0 (`ad05669`) and v0.16.0 (`1019075`) on 2026-10-25 (design policy chapter 8) |
 | 9 | Whether `Renderer` / ArtServer's session type is Send | Check with the compiler at build time → **Verified** (the build passed; design policy section 13.2 #3) |
 
 ---

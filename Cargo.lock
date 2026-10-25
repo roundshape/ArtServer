@@ -3220,8 +3220,8 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "vectorcraft-affinity"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -3231,8 +3231,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-brush"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "kurbo",
  "serde",
@@ -3244,8 +3244,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-cad"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "image",
  "kurbo",
@@ -3260,8 +3260,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-color"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "kurbo",
  "moxcms",
@@ -3272,9 +3272,10 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-doc"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
+ "chrono",
  "hayro-ccitt",
  "image",
  "kurbo",
@@ -3289,8 +3290,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-effects"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "image",
  "kurbo",
@@ -3305,8 +3306,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-engine"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "craft-docpath",
  "flate2",
@@ -3339,8 +3340,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-eps"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "flate2",
  "hayro-ccitt",
@@ -3361,8 +3362,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-format"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "flate2",
  "rustix",
@@ -3374,8 +3375,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-geom"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "kurbo",
  "serde",
@@ -3384,8 +3385,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-mcp"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "image",
  "log",
@@ -3401,8 +3402,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-metafile"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "image",
  "kurbo",
@@ -3416,8 +3417,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-pathops"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "kurbo",
  "linesweeper",
@@ -3427,10 +3428,11 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-pdf"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "aes",
+ "chrono",
  "craft-pdf",
  "flate2",
  "image",
@@ -3455,8 +3457,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-plugins"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "serde",
  "serde_json",
@@ -3469,8 +3471,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-render"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "flate2",
  "gif",
@@ -3490,13 +3492,13 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-scriptcheck"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 
 [[package]]
 name = "vectorcraft-svg"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "craft-docpath",
  "flate2",
@@ -3517,8 +3519,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-text"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "harfrust",
  "icu_segmenter",
@@ -3532,13 +3534,14 @@ dependencies = [
  "unicode-segmentation",
  "vectorcraft-doc",
  "vectorcraft-geom",
+ "vello_cpu",
  "windows-registry",
 ]
 
 [[package]]
 name = "vectorcraft-three-d"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "vectorcraft-geom",
  "vectorcraft-pathops",
@@ -3546,8 +3549,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-tools"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "kurbo",
  "serde",
@@ -3562,8 +3565,8 @@ dependencies = [
 
 [[package]]
 name = "vectorcraft-trace"
-version = "0.14.0"
-source = "git+https://github.com/storytold/vectorcraft?rev=ad0566943ab9741e6356bbc9b53c3cc09895068d#ad0566943ab9741e6356bbc9b53c3cc09895068d"
+version = "0.16.0"
+source = "git+https://github.com/storytold/vectorcraft?rev=10190753ef356ce8de7592626bcb99fd69db467c#10190753ef356ce8de7592626bcb99fd69db467c"
 dependencies = [
  "image",
  "kurbo",

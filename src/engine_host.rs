@@ -313,7 +313,16 @@ pub(crate) fn execute_checked(
     caller: Caller,
 ) -> Result<Value, HostError> {
     policy::check(command, params, caller).map_err(HostError::Rejected)?;
-    // The engine doesn't check for unknown arguments in release builds, so check them here
+    // The engine doesn't check for unknown arguments in release builds, so check them here. A batch's steps
+    // first, each as a command of its own: the engine runs them without passing back through here, and its
+    // check of a batch looks into the steps but not as the session does (the effects of `effect.setParams`)
+    if command == policy::BATCH {
+        for (i, (id, step)) in policy::batch_steps(params).map_err(HostError::Rejected)?.iter().enumerate() {
+            session
+                .check_params(id, step)
+                .map_err(|e| HostError::Rejected(policy::batch_step_error(i, id, &e.to_string())))?;
+        }
+    }
     session.check_params(command, params).map_err(|e| HostError::Rejected(e.to_string()))?;
     let opens_document = matches!(command, "file.new" | "document.open");
     if opens_document && session.documents().len() >= limits.max_documents {
@@ -351,7 +360,7 @@ mod tests {
     }
 
     fn spawn_host(dir: &tempfile::TempDir, queue_depth: usize, max_documents: usize, slots: Arc<RunSlots>, call_timeout: Duration) -> EngineHost {
-        let roots = AutomationRoots::new(Some(dir.path()), None).unwrap().unwrap();
+        let roots = AutomationRoots::new(&[dir.path()], &[]).unwrap().unwrap();
         EngineHost::spawn(
             EngineLimits {
                 queue_depth,
@@ -634,6 +643,11 @@ mod tests {
             ("command_run", json!({"id": "document.export", "params": {"format": "svg"}})),
             ("command_run", json!({"id": "file.new", "params": {}})),
             ("command_batch", json!({"steps": [{"id": "plugin.install", "params": {}}]})),
+            // The engine's batch is open, but not for what the allowlist refuses
+            (
+                "command_run",
+                json!({"id": "command.batch", "params": {"commands": [{"command": "prefs.set", "params": {}}]}}),
+            ),
         ] {
             let r = tool(&host, name, args.clone()).await;
             assert!(text_of(&r).contains("not allowed"), "{name} {args}: {}", text_of(&r));
@@ -644,6 +658,60 @@ mod tests {
             assert!(r.is_error, "{name}: {}", text_of(&r));
             assert!(text_of(&r).contains("not available"), "{name}: {}", text_of(&r));
         }
+    }
+
+    /// The number of objects in the active document's layers.
+    async fn object_count(host: &EngineHost) -> usize {
+        let r = tool(host, "doc_inspect", json!({})).await;
+        let doc: Value = serde_json::from_str(&text_of(&r)).unwrap();
+        let layers = doc["layers"].as_array().unwrap_or_else(|| panic!("no layers: {doc}"));
+        layers
+            .iter()
+            .map(|l| l["children"].as_array().map_or_else(|| panic!("no children: {l}"), Vec::len))
+            .sum()
+    }
+
+    #[tokio::test]
+    async fn the_drawing_tools_style_their_objects_in_one_checked_batch() {
+        // Since VectorCraft v0.15.0, draw_shape and draw_path make and style the object with one command.batch
+        let dir = tempfile::tempdir().unwrap();
+        let host = host_with_document(&dir).await;
+        for (name, args) in [
+            (
+                "draw_shape",
+                json!({"shape": "ellipse", "x": 10, "y": 10, "width": 40, "height": 40, "fill": "#ff0000", "opacity": 50, "name": "dot"}),
+            ),
+            ("draw_path", json!({"d": "M 0 0 L 50 50", "stroke": "#000000", "strokeWidth": 2})),
+        ] {
+            let r = tool(&host, name, args).await;
+            assert!(!r.is_error, "{name}: {}", text_of(&r));
+            assert!(
+                serde_json::from_str::<Value>(&text_of(&r)).unwrap()["id"].is_u64(),
+                "{name}: {}",
+                text_of(&r)
+            );
+        }
+        assert_eq!(object_count(&host).await, 2);
+        // A step with an argument the engine doesn't know refuses the whole batch before it runs
+        let r = tool(
+            &host,
+            "command_run",
+            json!({"id": "command.batch", "params": {"commands": [{"command": "shape.rectangle", "params": {"x": 0, "y": 0, "width": 5, "height": 5, "bogus": 1}}]}}),
+        )
+        .await;
+        assert!(r.is_error, "{}", text_of(&r));
+        assert!(text_of(&r).contains("batch step 0 (`shape.rectangle`) failed"), "{}", text_of(&r));
+        assert_eq!(object_count(&host).await, 2);
+        // A step the engine refuses while running rolls the batch back, and reads as the step's own error
+        let r = tool(
+            &host,
+            "draw_shape",
+            json!({"shape": "rectangle", "x": 0, "y": 0, "width": 5, "height": 5, "fill": "not a colour"}),
+        )
+        .await;
+        assert!(r.is_error, "{}", text_of(&r));
+        assert!(!text_of(&r).starts_with("batch step"), "{}", text_of(&r));
+        assert_eq!(object_count(&host).await, 2);
     }
 
     #[tokio::test]

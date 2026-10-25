@@ -693,7 +693,35 @@ const SHARED: &[&str] = &[
     "paraStyle.redefine",
     "paraStyle.rename",
     "paraStyle.setAttrs",
+    // VectorCraft v0.14.0 to v0.16.0 (2026-10-25): the new commands that edit only within the document
+    // (docs/design-policy.md section 4.7). library.moveGroup belongs to the closed library namespace
+    "brush.move",
+    "brush.selectionArt",
+    "brush.unused",
+    "edit.clearHistory",
+    "edit.dropSelection", // copies objects from another document open in the same working session
+    "effect.lightingPreset",
+    "object.objectsOnPath.attach",
+    "object.objectsOnPath.expand",
+    "object.objectsOnPath.options",
+    "path.moveAnchor",
+    "select.color",
+    "type.fractionalWidths",
+    "type.ruby",
+    "type.scaleTextAttributes",
+    "type.systemLayout",
+    "variable.loadLibrary", // only as data (`xml` or `dataBase64`): a string `path` is refused like every path
 ];
+
+/// The engine's command that runs several commands as one undo step, rolling all of them back when one fails.
+/// VectorCraft's `draw_shape` and `draw_path` run through it since VectorCraft v0.15.0, so VectorCraft's tools may
+/// use it, with each step checked as a command of its own (docs/design-policy.md section 4.7). It isn't on the
+/// list, so `command_list` doesn't show it: the AI has the `command_batch` tool for several commands.
+pub const BATCH: &str = "command.batch";
+
+/// The most steps one `command.batch` may hold, as many as VectorCraft's `command_batch` tool takes
+/// (`MAX_COMMAND_BATCH_STEPS` in VectorCraft's `crates/mcp/src/tools.rs`).
+const MAX_BATCH_STEPS: usize = 256;
 
 /// Formats allowed for export.
 pub const EXPORT_FORMATS: &[&str] = &["svg", "pdf", "png", "ai", "vectorcraft"];
@@ -718,6 +746,12 @@ pub fn allowed_commands() -> impl Iterator<Item = &'static str> {
 
 /// May `caller` run `command` with `params`? If not, returns the reason.
 pub fn check(command: &str, params: &Value, caller: Caller) -> Result<(), String> {
+    if command == BATCH && caller == Caller::VectorCraftTool {
+        for (i, (id, step)) in batch_steps(params)?.iter().enumerate() {
+            check(id, step, caller).map_err(|e| batch_step_error(i, id, &e))?;
+        }
+        return Ok(());
+    }
     if !is_allowed(command, caller) {
         return Err(format!("command `{command}` is not allowed"));
     }
@@ -760,6 +794,42 @@ pub fn check(command: &str, params: &Value, caller: Caller) -> Result<(), String
     Ok(())
 }
 
+/// The steps of a `command.batch` (`commands`: objects of `command` and `params`), each id with its params
+/// (`{}` when it gives none), as the engine runs them. Refuses what would let a step pass unchecked: more than
+/// [`MAX_BATCH_STEPS`] steps, a step of another form, and a batch inside a batch.
+pub fn batch_steps(params: &Value) -> Result<Vec<(&str, Value)>, String> {
+    let commands = params
+        .get("commands")
+        .and_then(Value::as_array)
+        .ok_or_else(|| format!("`commands` of `{BATCH}` must be an array of steps"))?;
+    if commands.len() > MAX_BATCH_STEPS {
+        return Err(format!("`{BATCH}` holds {} steps; at most {MAX_BATCH_STEPS}", commands.len()));
+    }
+    let mut steps = Vec::with_capacity(commands.len());
+    for (i, c) in commands.iter().enumerate() {
+        let step = c.as_object().filter(|o| o.keys().all(|k| k == "command" || k == "params"));
+        let id = step.and_then(|o| o.get("command")).and_then(Value::as_str);
+        let (Some(step), Some(id)) = (step, id) else {
+            return Err(format!("step {i} of `{BATCH}` must be an object of `command` and `params`"));
+        };
+        if id == BATCH {
+            return Err(batch_step_error(i, id, "batches cannot nest"));
+        }
+        let params = match step.get("params") {
+            None | Some(Value::Null) => Value::Object(serde_json::Map::new()),
+            Some(p) => p.clone(),
+        };
+        steps.push((id, params));
+    }
+    Ok(steps)
+}
+
+/// The refusal of step `i` of a `command.batch`, in the form the engine gives a failed step, which VectorCraft's
+/// drawing tools read back to the step's own error.
+pub fn batch_step_error(i: usize, id: &str, error: &str) -> String {
+    format!("batch step {i} (`{id}`) failed: {error}")
+}
+
 /// Can the value be read as a file location (a string, or an array containing strings)?
 fn names_a_file(value: &Value) -> bool {
     match value {
@@ -783,7 +853,6 @@ mod tests {
             "plugin.run",
             "color.loadProfile",
             "prefs.set",
-            "command.batch",
             "action.batch",
             "file.saveAs",
             "help.website",
@@ -802,6 +871,8 @@ mod tests {
             "perspective.grid.lock",
             "perspective.grid.lockStation",
             "object.intertwine.edit",
+            // New in VectorCraft v0.14.0 to v0.16.0 and left closed: the library namespace
+            "library.moveGroup",
             // Closed in the third batch: exports (left to export_document), files given as data, the format list,
             // the whole document model, and the import matches of other apps' shortcut sets
             "document.exportPdf",
@@ -895,6 +966,7 @@ mod tests {
             ("perspective.presets.import", json!({"data": "{}"})),
             ("flattener.presets.export", json!({})),
             ("flattener.presets.import", json!({"data": "{}"})),
+            ("variable.loadLibrary", json!({"xml": "<variableSets/>"})),
         ] {
             assert!(
                 check(id, &json!({"path": "/tmp/x"}), Caller::VectorCraftTool).is_err(),
@@ -956,6 +1028,58 @@ mod tests {
     fn plug_in_effects_are_refused() {
         assert!(check("effect.apply", &json!({"effect": "plugin.example"}), Caller::VectorCraftTool).is_err());
         assert!(check("effect.apply", &json!({"effect": "stylize.dropShadow"}), Caller::VectorCraftTool).is_ok());
+    }
+
+    #[test]
+    fn batches_are_open_to_vectorcraft_tools_with_every_step_checked() {
+        let rect = json!({"command": "shape.rectangle", "params": {"x": 0, "y": 0, "width": 1, "height": 1}});
+        let batch = |steps: Vec<Value>| json!({"label": "Rectangle", "commands": steps});
+        // As VectorCraft's draw_shape sends it, and a step without params
+        let fill = json!({"command": "paint.setFill", "params": {"color": "#ff0000", "item": null}});
+        assert!(check(BATCH, &batch(vec![rect.clone(), fill]), Caller::VectorCraftTool).is_ok());
+        assert!(check(BATCH, &batch(vec![json!({"command": "edit.undo"})]), Caller::VectorCraftTool).is_ok());
+        // ArtServer's own tools don't use it
+        assert!(check(BATCH, &batch(vec![rect.clone()]), Caller::ArtServer).is_err());
+        // One refused step refuses the batch, in the engine's form for a failed step
+        for (step, refusal) in [
+            (
+                json!({"command": "prefs.set", "params": {}}),
+                "batch step 1 (`prefs.set`) failed: command `prefs.set` is not allowed",
+            ),
+            (
+                json!({"command": "file.new", "params": {}}),
+                "batch step 1 (`file.new`) failed: command `file.new` is not allowed",
+            ),
+            (
+                json!({"command": "shape.rectangle", "params": {"file": "/etc/hosts"}}),
+                "batch step 1 (`shape.rectangle`) failed: parameter `file`",
+            ),
+            (
+                json!({"command": "effect.apply", "params": {"effect": "plugin.x"}}),
+                "batch step 1 (`effect.apply`) failed: plug-in effects",
+            ),
+            (
+                json!({"command": BATCH, "params": {"commands": []}}),
+                "batch step 1 (`command.batch`) failed: batches cannot nest",
+            ),
+        ] {
+            let e = check(BATCH, &batch(vec![rect.clone(), step]), Caller::VectorCraftTool).unwrap_err();
+            assert!(e.starts_with(refusal), "{e}");
+        }
+        // Steps of another form, and too many steps
+        for steps in [
+            json!(null),
+            json!({}),
+            json!([1]),
+            json!([{"params": {}}]),
+            json!([{"command": 1}]),
+            json!([{"command": "edit.undo", "label": "x"}]),
+        ] {
+            assert!(check(BATCH, &json!({"commands": steps}), Caller::VectorCraftTool).is_err(), "{steps}");
+        }
+        assert!(check(BATCH, &batch(vec![rect.clone(); MAX_BATCH_STEPS]), Caller::VectorCraftTool).is_ok());
+        let e = check(BATCH, &batch(vec![rect; MAX_BATCH_STEPS + 1]), Caller::VectorCraftTool).unwrap_err();
+        assert!(e.contains("at most 256"), "{e}");
     }
 
     #[test]

@@ -1493,3 +1493,62 @@ Read back with `gh api repos/roundshape/ArtServer`: the description as above, `h
 2. Not decided: GitHub's secret scanning and Dependabot alerts, free for public repositories and off now (`cargo deny` checks published advisories locally)
 3. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
 4. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+
+## 2026-10-25 Updated VectorCraft to v0.16.0, with `command.batch` checked step by step
+
+### Policy
+
+The second step of the update (the entry on v0.14.0 above): the latest release, v0.16.0 (`10190753ef356ce8de7592626bcb99fd69db467c`, published 2026-10-23). Since v0.15.0, VectorCraft's `draw_shape` and `draw_path` make the object and style it with one `command.batch`, so that a step the engine refuses leaves nothing behind (upstream #3545), and ArtServer's allowlist refused `command.batch`. The project owner chose option A of the four considered: VectorCraft's tools may run `command.batch` when every step passes the checks a command of its own would (design policy section 4.7, with the options not taken). The project owner also agreed to open 16 of the 17 commands new since v0.13.1 and keep `library.moveGroup` closed.
+
+Read in the engine before the change: its `command.batch` (`crates/engine/src/cmd/fileio/batch.rs`) runs each step with `execute_step`, refuses a batch inside a batch, resolves no references between steps, and on an error brings back the documents and the session's paint defaults, drawing mode, clipboard and Untitled count. Its `check_params` looks into a batch's steps (`crates/engine/src/cmd/params.rs`), but as the free function, without the check of `effect.setParams` that `Session::check_params` adds. `AutomationRoots::new` takes lists of folders since v0.15.0; an empty list of write roots refuses every write as `None` did (`crates/engine/src/file_access.rs`).
+
+### What changed and how it was handled
+
+| Item | Details |
+|---|---|
+| commit | Raised the 5 VectorCraft entries in `Cargo.toml` to `1019075` (v0.16.0) |
+| `Cargo.lock` | Only the 22 VectorCraft crates changed (0.14.0 → 0.16.0, and the rev), and their dependency lists gained `chrono` (two crates) and `vello_cpu` (`vectorcraft-text`), both already in the lock. No other crate moved |
+| PDF patches and build settings | Same in v0.16.0 (craft-libs `ca50d63`). Unchanged |
+| `AutomationRoots::new` | `(Some(dir), None)` became `(&[dir], &[])` in `src/lib.rs` and two tests |
+| `command.batch` (`src/policy.rs`) | `policy::check` lets `Caller::VectorCraftTool` run it when every step passes `check` as a command of its own; `batch_steps` refuses more than 256 steps, a step that isn't an object of `command` and `params`, and a batch inside a batch. A refusal reads as the engine's failed step (`batch step N (`id`) failed: …`), which `draw_shape` and `draw_path` read back to the step's own error. `Caller::ArtServer` still may not run it, and it isn't on the list, so `command_list` doesn't show it |
+| Unknown arguments (`src/engine_host.rs`) | `execute_checked` runs `Session::check_params` on each step of a batch, in the same form, before the engine's check of the batch as a whole |
+| Allowlist | The 16 commands, grouped with a comment. 626 commands in all. `library.moveGroup` is in the test of refused commands; `command.batch` left that list for a test of its own |
+| Tests | `batches_are_open_to_vectorcraft_tools_with_every_step_checked` (policy) and `the_drawing_tools_style_their_objects_in_one_checked_batch` (engine host: `draw_shape` with a fill, opacity and name and `draw_path` work; a step with an unknown argument refuses the batch before it runs; a colour the engine refuses rolls `draw_shape` back, and the reply is the step's own error). `command_run` of `command.batch` with `prefs.set` joined the test of refusals |
+| License notices | The VectorCraft entry in `about.hbs`, regenerated |
+| Documents | Design policy sections 4.7 (`command.batch`, the new commands) and 6.1, chapter 8 and its revisions; `docs/architecture.md` (the referenced commit) |
+
+### Commands run and results
+
+| Command | Result |
+|---|---|
+| `cargo build` (online, updating `Cargo.lock`) | Succeeded in 1m 14s, no warnings |
+| `cargo test --locked` | The first run: 1 failed. The engine's check of the batch as a whole looked into the steps first and gave the step's error without `batch step 0`, so the per-step check moved before it. Then all 84 passed (57 unit, 25 E2E, 2 for the PDF backend) |
+| `cargo clippy --all-targets --locked` | No warnings |
+| `cargo fmt --check` | Lines added in this change were not formatted; `cargo fmt` changed only those, and the check then passed |
+| `cargo deny check` | advisories, bans, licenses and sources ok |
+| `cargo about generate about.hbs -o THIRD_PARTY_NOTICES.md` | Succeeded. Only the VectorCraft entry and the crate versions changed |
+
+The Windows build of `0400bff` (before this change; run 40146146077, by hand) succeeded in 27 minutes, 25m 56s of it the build, with no cache in the new repository.
+
+### Checking from Claude Code
+
+The project owner restarted ArtServer with the new build (`target/debug/artserver`, built 09:49, started 10:25), and the tools were used from Claude Code in a document of 400 × 300 pt.
+
+| Call | Result |
+|---|---|
+| `draw_shape` rounded rectangle: fill, `stroke` "none", `name`, `opacity` 80, `effects` `stylize.dropShadow` | Succeeded; the reply lists the name, opacity, paint and effect, and `doc_inspect` shows them on the object |
+| `draw_shape` star: fill, stroke 3 pt, `dash` [6, 3], `join` round | Succeeded |
+| `draw_path` from SVG path data: `fill` "none", stroke 6 pt, `cap` round | Succeeded |
+| `draw_shape` with `fill` "not a colour" | Error "invalid parameters for `paint`: bad color "not a colour""; no ellipse left |
+| `command_batch`, `atomic`, label 点を3つ: three `draw_shape` steps | Succeeded (`created` 5, 6, 7); one `undo` removed all three (`undone` 点を3つ) and `redo` brought them back |
+| `command_run` of `command.batch`: `shape.rectangle`, then `prefs.set` | Refused before it ran: "batch step 1 (`prefs.set`) failed: command `prefs.set` is not allowed"; no rectangle made |
+| `doc_inspect` | Six objects. The history has one step for each call: Rounded Rectangle, Star, Pen, 点を3つ (with v0.13.1 the styling took steps of its own) |
+| `render_preview` | As drawn, the drop shadow included |
+
+### Next steps
+
+1. Not checked yet: the Linux CI and the Windows build of this change
+2. Not decided: GitHub's secret scanning and Dependabot alerts
+3. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+4. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
+5. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified

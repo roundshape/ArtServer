@@ -135,7 +135,7 @@ mod tests {
     use super::*;
 
     fn sessions(dir: &tempfile::TempDir, max: usize, idle: Duration) -> Sessions {
-        let roots = AutomationRoots::new(Some(dir.path()), None).unwrap().unwrap();
+        let roots = AutomationRoots::new(&[dir.path()], &[]).unwrap().unwrap();
         Sessions::new(
             max,
             idle,
