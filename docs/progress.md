@@ -1604,3 +1604,27 @@ The Linux CI (run 40150759011) and the Windows build (run 40151171676, by hand; 
 2. Not decided: GitHub's secret scanning and Dependabot alerts
 3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
 4. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+
+## 2026-10-25 Secret scanning, push protection and Dependabot alerts
+
+### Policy
+
+The project owner turned on three of GitHub's free features for public repositories. Dependabot security updates (pull requests made by GitHub) stay off: such a pull request rewrites `Cargo.lock`, which can move unrelated crates as `cargo update` did with tokio (windows-sys 0.61 → 0.52, the entry on tokio 1.54.1 above), and every change to `Cargo.lock` here is read before it goes in. An alert is fixed by hand instead. The CI doesn't run `cargo deny`, so until now a new advisory showed only when it was run by hand, as RUSTSEC-2026-0386 did.
+
+### What was done
+
+| Setting | How | State |
+|---|---|---|
+| Secret scanning | `gh api -X PATCH repos/roundshape/ArtServer` (`security_and_analysis`) | Enabled |
+| Push protection | The same call | Enabled; a push with a secret is refused |
+| Dependabot alerts | `gh api -X PUT repos/roundshape/ArtServer/vulnerability-alerts` (204) | Enabled |
+| Dependabot security updates | Unchanged | Disabled |
+
+Read back afterwards: the settings as above, 0 secret scanning alerts and 0 Dependabot alerts (the scans may still have been running), and 407 packages in the dependency graph, read from `Cargo.lock`. Dependabot matches crates from crates.io; the git dependencies (VectorCraft, craft-libs) aren't covered, so their advisories still come from following upstream.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+4. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
