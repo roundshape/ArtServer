@@ -1689,3 +1689,19 @@ The Linux CI of `9555101` (the entry before; run 40191330958) succeeded.
 1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
 2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
 3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; process isolation
+
+## 2026-10-25 An `.ai` without PDF compatibility, placed in Illustrator: not reported
+
+### What was found
+
+The question left open since the entries of 2026-10-21: whether to report to VectorCraft that an `.ai` saved without PDF compatibility, placed (`place_upload`) or opened with `pages`, comes in as Illustrator's notice page and is reported as a success. The project owner placed `~/Desktop/artserver-output/nonPDF互換.ai` (the test file of 2026-10-21) in Illustrator: it came in as a linked file showing the same notice page (「これは PDF の内容を含めずに保存された Adobe® Illustrator® ファイルです。このファイルを他のアプリケーションに配置または開くには…」), not the art. The notice page is all such a file offers outside Illustrator's own data, and Illustrator places it too, so VectorCraft does what Illustrator does. Opening the file whole, both read Illustrator's own data.
+
+### Decision
+
+The project owner decided not to report it. ArtServer's advice stays as it is: `.ai` files saved with PDF compatibility (`uploads::ACCEPTED`, which `upload_create` returns to the AI and the upload page shows; design policy section 4.6).
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: what to do about Illustrator splitting a text; process isolation
