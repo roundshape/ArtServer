@@ -1477,10 +1477,19 @@ At the project owner's instruction, the repository was made public with `gh repo
 | The repository page and `SECURITY.md` without logging in | Both 200 |
 | GraphQL `isSecurityPolicyEnabled` / `securityPolicyUrl` | `true` / `https://github.com/roundshape/ArtServer/security/policy`: GitHub shows `SECURITY.md` as the policy |
 
+### The repository's description and wiki
+
+At the project owner's instruction, with `gh repo edit roundshape/ArtServer --description … --enable-wiki=false`:
+
+- Description (the About box, search results and link previews): "Headless vector graphics server driven over MCP (Streamable HTTP), built on the VectorCraft engine", the same as `description` in `Cargo.toml`. No topics
+- Wiki: turned off. The documents are the README and `docs/`, and the wiki was never used
+- Issues stay on: `SECURITY.md` sends published advisories of dependencies to ordinary issues
+
+Read back with `gh api repos/roundshape/ArtServer`: the description as above, `has_wiki` false, `has_issues` true, `visibility` public.
+
 ### Next steps
 
-1. Not done yet: the Windows build of the current `main` (by hand, about 30 minutes)
-2. Not decided: the repository's description, and whether to turn off its unused wiki
-3. Not decided: GitHub's secret scanning and Dependabot alerts, free for public repositories and off now (`cargo deny` checks published advisories locally)
-4. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
-5. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
+1. Running: the Windows build of the current `main` (run 40146146077, started 2026-10-25 00:17 UTC on `0400bff`; no cache in the new repository, so all VectorCraft crates are built)
+2. Not decided: GitHub's secret scanning and Dependabot alerts, free for public repositories and off now (`cargo deny` checks published advisories locally)
+3. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
+4. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
