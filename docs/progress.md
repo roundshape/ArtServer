@@ -1461,3 +1461,26 @@ Before making the repository public, the project owner decided to publish `docs/
 1. Not done yet: turning on private vulnerability reporting in the repository's settings; until then the link the policy names doesn't appear
 2. Not done yet: the Windows build of the current `main`, the repository's description, and whether to turn off its unused wiki
 3. Then making the repository public
+
+## 2026-10-25 The repository is public
+
+### What was done
+
+At the project owner's instruction, the repository was made public with `gh repo edit roundshape/ArtServer --visibility public --accept-visibility-change-consequences`, and private vulnerability reporting was turned on right after with `gh api -X PUT repos/roundshape/ArtServer/private-vulnerability-reporting`. GitHub offers private vulnerability reporting only for public repositories: tried while the repository was private, the same request returned 404, so the two steps were run one after the other.
+
+### Commands run and results
+
+| Check | Result |
+|---|---|
+| `gh api repos/roundshape/ArtServer` | `visibility` is `public` |
+| `gh api repos/roundshape/ArtServer/private-vulnerability-reporting` | `enabled` is `true` |
+| The repository page and `SECURITY.md` without logging in | Both 200 |
+| GraphQL `isSecurityPolicyEnabled` / `securityPolicyUrl` | `true` / `https://github.com/roundshape/ArtServer/security/policy`: GitHub shows `SECURITY.md` as the policy |
+
+### Next steps
+
+1. Not done yet: the Windows build of the current `main` (by hand, about 30 minutes)
+2. Not decided: the repository's description, and whether to turn off its unused wiki
+3. Not decided: GitHub's secret scanning and Dependabot alerts, free for public repositories and off now (`cargo deny` checks published advisories locally)
+4. The second step, v0.16.0: `AutomationRoots::new`, how GuardedBackend treats the `command.batch` that `draw_shape` and `draw_path` now run, and classifying the new commands (17 since v0.13.1)
+5. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
