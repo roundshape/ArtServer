@@ -1747,3 +1747,23 @@ The project owner decided not to ask VectorCraft to write Japanese text as text 
 1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
 2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
 3. Not decided: process isolation
+
+## 2026-10-25 EPS from VectorCraft: all type as outlines
+
+The project owner asked whether EPS would keep text editable in Illustrator. VectorCraft v0.16.0 doesn't save EPS: Save As offers `.vectorcraft`, template, PDF, SVG, SVGZ and `.ai` (`SAVE_FORMATS`, `crates/engine/src/cmd/fileio/save.rs`). EPS is an export, in the format list of File › Export › Export As… (`crates/ui-egui/src/dialogs/export_as.rs`: every writable format but `.vectorcraft` and `.ai`), followed by EPS Options. Its code (`crates/engine/src/cmd/fileio/eps.rs`) says that type is always written as outlines, transparency is flattened, and the native document rides along in comments for reopening in VectorCraft. The project owner exported EPS from the desktop app (0.16.0): every text came out as outlines.
+
+For text to edit in Illustrator, then:
+
+| Format | Text in Illustrator | In ArtServer |
+|---|---|---|
+| PDF-compatible `.ai` | Text, split per line and per stretch of one style (the entry above) | Exported |
+| EPS | Outlines | Closed (design policy section 4.7, 2026-10-19) |
+| Legacy `.ai` (Illustrator 7.0) | Latin text as text; Japanese as outlines | Closed (`aiVersion` other than `pdf` refused) |
+
+The PDF-compatible `.ai` stays the best of these, and the project owner closed the topic there. SVG opened in Illustrator was not tried for text splitting; the README already sends Illustrator users to `.ai` because of the font warning.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: process isolation
