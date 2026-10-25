@@ -163,7 +163,7 @@ Few people are expected to use ArtServer on Linux. Since VectorCraft also suppor
 
 | Item | Details |
 |---|---|
-| Run | run 39084451667 (commit `4390de1`) |
+| Run | run 39084451667 (commit `bea476b`) |
 | Result | Succeeded. No warnings or errors |
 | Duration | About 16.5 minutes in total, of which the build took 15m 49s. Compiling and linking ArtServer itself took about 3 minutes |
 
@@ -443,7 +443,7 @@ The project owner decided that ArtServer is not aimed at Japan only. The docs, c
 | Parsing the edited TOML and YAML files | ok |
 | `cargo deny check` | Not run: `cargo-deny` was not found in this shell. Only comments changed in `deny.toml` |
 
-- Committed as `8c0819f`, `66cdf16` and `d40af63` and pushed to main. The Linux build on GitHub Actions could not be checked with `gh` (HTTP 404: `gh` is logged in with a different account from the SSH alias used for push).
+- Committed as `8327012`, `8ae30fa` and `ab006a9` and pushed to main. The Linux build on GitHub Actions could not be checked with `gh` (HTTP 404: `gh` is logged in with a different account from the SSH alias used for push).
 
 ## 2026-10-19 Notes from reviewing concurrency and sessions (no changes)
 
@@ -630,7 +630,7 @@ The English line was set in Inter (`Inter-Regular` embedded), which is not insta
 
 ## 2026-10-19 Checking again from the start (after the .ai change)
 
-The project owner cleared `~/Desktop/artserver-output/`, and the checks were run again with the server built from `d05794e`. The English line now used Helvetica Neue, which is installed on the Mac, instead of the bundled Inter.
+The project owner cleared `~/Desktop/artserver-output/`, and the checks were run again with the server built from `233ca3f`. The English line now used Helvetica Neue, which is installed on the Mac, instead of the bundled Inter.
 
 | What was checked | Result |
 |---|---|
@@ -1000,7 +1000,7 @@ The project owner asked whether process isolation (design policy chapter 12) is 
 | Item | Details |
 |---|---|
 | Machine | Apple M3, 8 cores, 24 GB of memory, macOS 26.7.1 |
-| Build | `target/release/artserver` at `0820c25`, default settings |
+| Build | `target/release/artserver` at `8966b51`, default settings |
 | Fonts | 432 font files in the folders VectorCraft scans (`/System/Library/Fonts` 370, `/System/Library/AssetsV2/com_apple_MobileAsset_Font8` 59, `~/Library/Fonts` 3, `/Library/Fonts` none); `list_fonts` lists 379 families |
 | Memory figures | RSS from `ps`, and the maximum RSS and peak memory footprint from `/usr/bin/time -l` |
 
@@ -1070,7 +1070,7 @@ To see how close the current form (one process, a thread per working session) co
 | Item | Details |
 |---|---|
 | Machine | As in the entry before (Apple M3, 8 cores, 24 GB, macOS 26.7.1) |
-| Build | `target/release/artserver` of `0820c25` (the later commits changed documents only), default settings: a call's time limit 60 s, `--max-running` 2, upload limit 64 MiB |
+| Build | `target/release/artserver` of `8966b51` (the later commits changed documents only), default settings: a call's time limit 60 s, `--max-running` 2, upload limit 64 MiB |
 | Memory figures | RSS sampled every 50 ms, so short peaks may be higher. The server keeps the memory a file took (see below), so an increase is counted from the RSS before the file |
 
 ### Results
@@ -1272,7 +1272,7 @@ rmcp 3.5.1's code was read on what it asks of a 2026-07-28 request (`src/transpo
 Two open points of the check from Claude Code, looked at before changing anything:
 
 - **`.ai` saved without PDF compatibility.** The check found that one opens whole, and the entry said the wording "saved with PDF compatibility" was narrower than what works. Trying the same file in each way showed otherwise: only `open_upload` without `pages` reads the art, from Illustrator's own data in the file (VectorCraft `crates/engine/src/cmd/fileio/load.rs:186-195`, which skips that data when pages are picked, and `:236-245`). `open_upload` with `pages` and `place_upload` bring in the notice page Illustrator writes as the PDF part ("save it again with PDF compatibility…"), reported as a success with the warning "only the PDF-compatible part of this file was read: art outside its artboards…", which doesn't say what happened. "Saved with PDF compatibility" is the condition under which a file works every way, so the project owner chose to keep it in what the AI reads (`uploads::ACCEPTED`, the tools' descriptions) and to note the rest for people. Whether to report the success with the notice page to VectorCraft is not decided.
-- **`session_close` never called.** The check's entry and the explanation before it relied on the 2026-10-19 note that the server's instructions don't mention `session_close`; that was fixed the same day (`0063a0c`): the instructions and `session_close`'s own description both say to close the session when the work is done. In the check, the AI did requests 2 to 6 in one session (06:43–07:06 UTC) while the project owner kept asking, so the work was never done; closing after each request would have discarded the documents. The server closes unused sessions after 30 minutes. The project owner chose to change nothing.
+- **`session_close` never called.** The check's entry and the explanation before it relied on the 2026-10-19 note that the server's instructions don't mention `session_close`; that was fixed the same day (`e690bc2`): the instructions and `session_close`'s own description both say to close the session when the work is done. In the check, the AI did requests 2 to 6 in one session (06:43–07:06 UTC) while the project owner kept asking, so the work was never done; closing after each request would have discarded the documents. The server closes unused sessions after 30 minutes. The project owner chose to change nothing.
 
 ### What was done
 
@@ -1284,7 +1284,7 @@ Two open points of the check from Claude Code, looked at before changing anythin
 | Command | Result |
 |---|---|
 | A script sending `nonPDF互換.ai` to the release build: `open_upload` named `.ai`, without a name, and with `pages` "1"; `place_upload` with and without `page` | Opened whole in the first two (the artboard's name from Illustrator, "アートボード 1"); the notice page in the other three, each a success with the warning above. Previews of the last two show the notice text |
-| `gh run view` of run 39562121287 (commit `959ac8b`, the first check with its cache) | Succeeded in 51 s in all: 10 s restoring the cache, 28 s checking (`vectorcraft-svg`, the engine, `vectorcraft-mcp` and `artserver`, as before). The cached build took 438 s |
+| `gh run view` of run 39562121287 (commit `c1087d6`, the first check with its cache) | Succeeded in 51 s in all: 10 s restoring the cache, 28 s checking (`vectorcraft-svg`, the engine, `vectorcraft-mcp` and `artserver`, as before). The cached build took 438 s |
 
 ### Next steps
 
@@ -1422,3 +1422,25 @@ The project owner decided to note in the README that a file to edit in Illustrat
 2. Not decided: what to do about Illustrator splitting a text, and about the "Regular" style (`add_text` still has no style argument in v0.16.0); whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
 3. Not checked yet: whether `artserver-check.vectorcraft` (2026-10-19) opens in the desktop app without a notice
 4. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+
+## 2026-10-25 One author for every commit, before going public
+
+### Policy
+
+Before making the repository public, the project owner had every commit's author and committer set to `roundshape <99551120+roundshape@users.noreply.github.com>`, GitHub's private address of the repository's owner. Before this, 38 commits (2026-10-19 to 2026-10-21) were by `kasuya` with no address, and 25 by `roundshape <roundshape2000@gmail.com>`, an address tied to another GitHub account.
+
+### What changed and how it was handled
+
+| Item | Details |
+|---|---|
+| History | `git filter-branch --env-filter` over `main`: all 63 commits. Their files, messages and dates are unchanged; only the IDs changed |
+| Commit IDs in this file | The 8 IDs of ArtServer's own commits in the entries before were replaced with the new ones. The GitHub Actions run numbers in those entries are unchanged, and the runs show the old IDs |
+| Git setting | `user.email` of this repository (`.git/config`) is the address above, so new commits use it |
+
+### Commands run and results
+
+| Check | Result |
+|---|---|
+| Commits before and after | 63 and 63; every commit's tree, author date and committer date the same; messages identical; the last tree identical |
+| Authors and committers after | All `roundshape <99551120+roundshape@users.noreply.github.com>` |
+| Own commit IDs in commit messages | None, so no message needed changing |
