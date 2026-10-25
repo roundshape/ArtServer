@@ -1628,3 +1628,15 @@ Read back afterwards: the settings as above, 0 secret scanning alerts and 0 Depe
 2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
 3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
 4. Design policy 13.2 #12 still says that whether Claude Code's AI uses the tools correctly is not verified
+
+## 2026-10-25 Design policy 13.2 #12: Claude Code's AI and the tools
+
+### What was done
+
+Design policy section 13.2 #12 still said that whether Claude Code's AI uses VectorCraft's tools and the generic tools correctly was not verified, though the checks from Claude Code of 2026-10-21 and 2026-10-22 did that, and the check of 2026-10-25 covered the tools changed in v0.16.0. The item now says verified, with what the AI did (commands found with `command_list` and run through `command_run` and atomic `command_batch`, installed fonts after `list_fonts`, uploads opened and placed, character styles made and applied, a new session after an expired one; with v0.16.0, `draw_shape` and `draw_path` in one checked batch, one `undo` for an atomic batch, a batch with a closed step refused before it ran) and what it can't see from the tools (a text styled in part coming apart in Illustrator, the "Regular" of #4128, and `session_close` never called). A line was added to the revisions.
+
+### Next steps
+
+1. Follow #4128; when a release has the fix, update and check in the desktop app that text with no font style named opens without a notice
+2. When an alert comes: read it, fix by hand, and check the change to `Cargo.lock`
+3. Not decided: what to do about Illustrator splitting a text; whether to report the `.ai` without PDF compatibility; previews' transparent background; process isolation
